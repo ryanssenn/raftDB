@@ -1,84 +1,107 @@
 # RaftDB
 
-A Distributed, Linearly Consistent Key-Value Store. This system leverages the [Raft](https://raft.github.io/raft.pdf) Consensus Algorithm to maintain strict data consistency across a distributed cluster, ensuring service availability even during node failures or network partitions.
+A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf), built for learning how replicated consensus actually works.
 
-Problems solved:
+This is not a production database. The core of the project is Raft: leader election, log replication, persistence, and recovery. On top of that there is a tiny in-memory key-value store (the state machine), HTTP endpoints so you can poke at a running cluster from your browser or curl, and an integration test suite that spins up real multi-node processes and breaks things on purpose.
 
-- Safety over Liveness: Property where a candidate must have a log as up-to-date as the majority to win an election, preventing "stale" leaders from overwriting committed data.
+<img width="60%" height="60%" alt="Raft state diagram" src="https://github.com/user-attachments/assets/6c7bf543-4297-4383-9367-21f5dbeb4911" />
 
-- gRPC Transport Layer: Leveraged gRPC and Protobuf for internal cluster RPCs to minimize serialization overhead and ensure type-safe communication between nodes.
+## What gets implemented
 
-- Concurrency & Locking: Managed complex state transitions (Follower → Candidate → Leader) using Go's sync.Mutex and channel primitives to prevent race conditions during high-frequency heartbeat intervals.
+The code follows the paper's main pieces:
 
-- State Machine Replication (SMR): Architected the separation between the Raft log layer and the underlying state machine, allowing for modular database backends.
+- **Leader election** with randomized timeouts (300-450ms)
+- **Log replication** through `AppendEntries`, with `nextIndex` / `matchIndex` for catch-up
+- **Persistence** via per-node `.rlog` (log entries) and `.meta` (current term, voted-for) files under `logs/`
+- **State machine apply** after commit (a simple `get` / `put` map)
 
+Writes go through Raft. Reads on the leader wait until committed entries have been applied. Followers forward client requests to the leader over gRPC.
 
-# Raft mechanics
-
-The cluster elects a single authoritative leader to manage consistency. All write requests must be processed by this node. If a client sends a request to a follower node, the follower forwards the command to the leader via gRPC. The leader then serializes the command into a log entry and persists it to its local disk.
-
-The leader broadcasts the new log entry to all follower nodes via AppendEntries RPCs amd waits for acknowledgment from a majority of the cluster (e.g., 3 out of 5 nodes) before considering the entry "committed". Only after this consensus is reached does the leader apply the change to its state machine and confirm success to the client.
-
-The system detects failures using a heartbeat mechanism. The leader periodically sends empty messages to prove it is active. If a follower stops receiving these heartbeats, it assumes the leader has failed. To prevent split votes where multiple nodes try to become Leader simultaneously, election timeouts are randomized (e.g., 300ms–450ms). The node that times out first increments its term and requests votes from peers.
-
-Data durability is handled via an append-only log structure. Each node maintains a .rlog file for command history and a .meta file for the current term and voting status. When a node restarts after a crash, it reads the log file from the beginning, replaying every operation to reconstruct the database state exactly as it was before the failure.
-
-<img width="60%" height="60%" alt="image" src="https://github.com/user-attachments/assets/6c7bf543-4297-4383-9367-21f5dbeb4911" />
-
-# Core Features
-
-- Strong Consistency (Linearizability): Guarantees that once a write is acknowledged, all subsequent reads will reflect that write or a later one. Client requests to followers are automatically proxied to the current cluster leader via internal gRPC channels.
-
-- High Availability via Raft Consensus: Implements a robust leader election mechanism with randomized timeouts to ensure the cluster remains operational and elects a new primary node within milliseconds of a failure.
-
-- Durable State Machine Replication: Uses an append-only Write-Ahead Log (WAL) to ensure that every committed transaction is persisted to disk. The system handles full state reconstruction upon node restart using .rlog and .meta recovery files.
-
-- Hybrid Communication Architecture: * Internal (gRPC/Protobuf): Low-latency, type-safe RPCs used for cluster-wide coordination, log replication, and heartbeats.
-
-- External (RESTful HTTP): A simple, language-agnostic API for client operations (GET, PUT) and cluster health monitoring.
-
-- Fault-Tolerant Log Catch-up: Automatically synchronizes lagging or newly joined nodes by identifying log inconsistencies and backfilling missing entries from the leader's log.
-
-## Running a node:
-
-    ./ryanDB --id=<node_id> --port=<port> --peers=<id=addr,...> [--reset=true|false]
-
-### HTTP API:
-- GET /get?key=<key>: Fetch value for key
-- GET /put?key=<key>&value=<value>: Store key-value pair
-- GET /status: Get node status (id, term, state, leader ID)
-
-# Testing
-
-To ensure the robustness of the consensus logic, I built a testing framework that simulates real-world distributed failures:
+## Project layout
 
 ```
+main.go          HTTP server, wires up a node
+core/            Raft logic (node, leader, rpc, log, storage)
+proto/           gRPC definitions and generated code
+test/            Integration tests (spins up real nodes)
+launch_node.sh   Helper script to start one node
+```
+
+If you are reading this to understand Raft, start in `core/node.go` and `core/leader.go`, then look at `core/rpc.go` for the RPC handlers.
+
+## Running a cluster
+
+Each node uses **two ports**:
+
+- **HTTP** (client API): set with `--port`
+- **gRPC** (node-to-node Raft RPCs): set in `--peers` as `id=host:port`
+
+These must be different. The test suite uses HTTP on `8001-8005` and gRPC on `9001-9005`.
+
+**Build:**
+
+```bash
+go build -o ryanDB .
+```
+
+**Start node 1** (fresh logs):
+
+```bash
+./ryanDB \
+  --id=node1 \
+  --port=8001 \
+  --peers=node1=127.0.0.1:9001,node2=127.0.0.1:9002,node3=127.0.0.1:9003 \
+  --reset=true
+```
+
+Start `node2` on port `8002` and `node3` on port `8003` with the same peers string. Use `--reset=false` on later runs to keep existing log files.
+
+Or use the helper script (starts one node at a time):
+
+```bash
+./launch_node.sh 1 true
+```
+
+Give the cluster a second or two after startup before sending requests.
+
+## HTTP API
+
+These exist so you can interact with a running cluster without writing gRPC clients. They are intentionally simple, not a real REST design.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /get?key=<key>` | Read a key (forwarded to leader if needed) |
+| `GET /put?key=<key>&value=<value>` | Write a key (goes through Raft) |
+| `GET /status` | JSON with node id, term, state (0=follower, 1=candidate, 2=leader), leader id |
+
+Example:
+
+```bash
+curl "http://localhost:8001/put?key=foo&value=bar"
+curl "http://localhost:8002/get?key=foo"
+curl "http://localhost:8001/status"
+```
+
+## Tests
+
+The integration tests build the `ryanDB` binary, launch a 5-node cluster, and drive it over HTTP. Run them from the repo root:
+
+```bash
 go test -v ./test
 ```
 
-#### Adversarial Testing & Cluster Resilience:
+| Test | What it checks |
+|---|---|
+| `TestElection` | Kill the leader, a new one shows up |
+| `TestLogReplication` | A write on one node is readable on all nodes |
+| `Test100LogReplication` | 99 writes routed to random nodes, all nodes agree at the end |
+| `TestLogPersistence` | Kill and restart every node, data survives |
+| `TestMissedLogsRecovery` | A node that was offline catches up when it comes back |
+| `TestFollowerChurnUnderLoad` | Random followers die and restart under continuous writes |
+| `TestNetworkPartition` | Minority nodes go offline, majority keeps committing, everyone converges after restart |
 
-- Leader Election & Term Consistency (TestElection): Validates the liveness of the cluster by ensuring a new leader is elected within a single randomized election timeout following a primary node failure.
+## Not implemented yet
 
-- Linearizable Log Replication (TestLogReplication): Confirms that a single write is correctly replicated and committed to a majority of nodes before being acknowledged.
-
-- Concurrency & High-Throughput Stress (Test100LogReplication): Evaluates the system under a heavy load of concurrent writes from multiple clients, ensuring all nodes reach the same final state machine index without log divergence.
-
-- Durability & Crash Recovery (TestLogPersistence): Verifies the persistence layer by crashing nodes and ensuring they reconstruct their entire state machine from the .rlog and .meta files upon restart.
-
-- Dynamic Catch-up Logic (TestMissedLogsRecovery): Tests the NextIndex and MatchIndex logic by forcing a node offline and ensuring it correctly synchronizes missed entries from the leader once re-connected.
-
-- Availability under High Churn (TestFollowerChurnUnderLoad): Simulates a "flapping" network or unstable hardware by randomly stopping and starting follower nodes under a continuous write load to verify cluster stability.
-
-- Network Partition Resilience (TestNetworkPartition): A critical safety test that simulates a split-brain scenario. It ensures that only the majority partition can commit entries and that the minority partition correctly rolls back uncommitted entries once the network heals.
-
-## Future goals:
-- Log Compaction (Snapshotting): Implementation of the Snapshotting mechanism to prevent the WAL (Write Ahead Log) from growing indefinitely and to speed up node recovery.
-
-- Batching & Pipelining: Optimizing AppendEntries to batch multiple log entries into a single RPC to improve throughput.
-
-# Resources
-
-This project was developed as a deep-dive into distributed consensus following the curriculum of McGill University's COMP 512 (Distributed Systems) by Professor Bettina Kemme
-
-
+- Log compaction / snapshotting
+- Proper linearizable reads (the current read path is a simplified version)
+- Dynamic cluster membership (peers are fixed at startup)
