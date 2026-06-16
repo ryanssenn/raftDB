@@ -90,6 +90,14 @@ The integration tests build the `ryanDB` binary, launch a 5-node cluster, and dr
 go test -v ./test
 ```
 
+The suite has also been run with Go's race detector:
+
+```bash
+go test -race ./...
+```
+
+Recent result on a local machine: all packages passed, including the integration suite.
+
 | Test | What it checks |
 |---|---|
 | `TestElection` | Kill the leader, a new one shows up |
