@@ -4,7 +4,7 @@ A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf), built 
 
 This is not a production database. The core of the project is Raft: leader election, log replication, persistence, and recovery. On top of that there is a tiny in-memory key-value store (the state machine), HTTP endpoints so you can poke at a running cluster from your browser or curl, and an integration test suite that spins up real multi-node processes and breaks things on purpose.
 
-<img width="60%" height="60%" alt="Raft state diagram" src="https://github.com/user-attachments/assets/6c7bf543-4297-4383-9367-21f5dbeb4911" />
+<img width="1280" height="786" alt="raft_demo" src="https://github.com/user-attachments/assets/561f122b-9ff0-4ab1-923f-832048c5d95b" />
 
 ## What gets implemented
 
@@ -28,6 +28,8 @@ launch_node.sh   Helper script to start one node
 ```
 
 If you are reading this to understand Raft, start in `core/node.go` and `core/leader.go`, then look at `core/rpc.go` for the RPC handlers.
+
+<img width="60%" height="60%" alt="Raft state diagram" src="https://github.com/user-attachments/assets/6c7bf543-4297-4383-9367-21f5dbeb4911" />
 
 ## Running a cluster
 
