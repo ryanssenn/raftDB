@@ -13,7 +13,6 @@ func InitNodes(t *testing.T) []*Node {
 	KillPorts(N)
 	nodes := NewNodes(N)
 	StartNodes(t, nodes, "true")
-	time.Sleep(1 * time.Second)
 
 	return nodes
 }
@@ -29,7 +28,7 @@ func TestElection(t *testing.T) {
 
 	t.Logf("%s has been killed", leader.id)
 	leader.StopNode()
-	time.Sleep(1 * time.Second)
+	WaitForLeader(t, nodes, 10*time.Second)
 
 	_, leaderCount = CountLeader(t, nodes)
 	if leaderCount != 1 {
@@ -87,15 +86,14 @@ func TestLogPersistence(t *testing.T) {
 		nodes[rand.Intn(len(nodes))].Put(t, key, value)
 	}
 
-	time.Sleep(2 * time.Second)
+	WaitForValue(t, nodes, "key9", "value9", 10*time.Second)
 
 	for _, node := range nodes {
 		t.Logf("Killing node %s", node.id)
 		node.StopNode()
-		time.Sleep(500 * time.Millisecond)
 		t.Logf("Restarting node %s", node.id)
 		node.StartNode(t, "false")
-		time.Sleep(3 * time.Second)
+		WaitForValue(t, []*Node{node}, "key9", "value9", 10*time.Second)
 	}
 
 	for i := 1; i < 10; i++ {
@@ -114,7 +112,6 @@ func TestMissedLogsRecovery(t *testing.T) {
 	defer StopNodes(nodes)
 
 	nodes[0].StopNode()
-	time.Sleep(500 * time.Millisecond)
 
 	activeNodes := nodes[1:]
 	for i := 1; i < 10; i++ {
@@ -124,7 +121,7 @@ func TestMissedLogsRecovery(t *testing.T) {
 	}
 
 	nodes[0].StartNode(t, "false")
-	time.Sleep(2 * time.Second)
+	WaitForValue(t, []*Node{nodes[0]}, "key9", "value9", 10*time.Second)
 
 	for i := 1; i < 10; i++ {
 		key := fmt.Sprintf("key%d", i)
@@ -141,7 +138,6 @@ func TestMissedLogsRecovery(t *testing.T) {
 func TestFollowerChurnUnderLoad(t *testing.T) {
 	nodes := InitNodes(t)
 	defer StopNodes(nodes)
-	time.Sleep(1 * time.Second)
 
 	leader, _ := CountLeader(t, nodes)
 
@@ -149,14 +145,13 @@ func TestFollowerChurnUnderLoad(t *testing.T) {
 		key := fmt.Sprintf("k%d", i)
 		val := fmt.Sprintf("v%d", i)
 		nodes[rand.Intn(N)].Put(t, key, val)
-		time.Sleep(500 * time.Millisecond)
+		WaitForValue(t, nodes, key, val, 10*time.Second)
 
 		f := nodes[rand.Intn(N)]
 		if f != leader {
 			f.StopNode()
-			time.Sleep(300 * time.Millisecond)
 			f.StartNode(t, "false")
-			time.Sleep(300 * time.Millisecond)
+			WaitForValue(t, []*Node{f}, key, val, 10*time.Second)
 		}
 	}
 
@@ -183,7 +178,7 @@ func TestNetworkPartition(t *testing.T) {
 		node.StopNode()
 	}
 
-	time.Sleep(2 * time.Second)
+	WaitForLeader(t, partition2, 10*time.Second)
 
 	for i := 1; i < 10; i++ {
 		key := fmt.Sprintf("key%d", i)
@@ -194,7 +189,7 @@ func TestNetworkPartition(t *testing.T) {
 	for _, node := range partition1 {
 		node.StartNode(t, "false")
 	}
-	time.Sleep(2 * time.Second)
+	WaitForValue(t, nodes, "key9", "value9", 10*time.Second)
 
 	for i := 1; i < 10; i++ {
 		key := fmt.Sprintf("key%d", i)

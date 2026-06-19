@@ -45,24 +45,40 @@ type Status struct {
 }
 
 func (n *Node) Status(t *testing.T) *Status {
+	status, err := n.TryStatus()
+	if err != nil {
+		t.Fatalf("HTTP request failed for %s: %v", n.id, err)
+	}
+	return status
+}
+
+func (n *Node) TryStatus() (*Status, error) {
 	url := fmt.Sprintf("http://localhost:%s/status", n.port)
 	resp, err := http.Get(url)
 
 	if err != nil {
-		t.Fatalf("HTTP request failed for %s: %v", n.id, err)
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
 	var status Status
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		t.Fatalf("invalid JSON from %s: %v", n.id, err)
+		return nil, err
 	}
 
-	return &status
+	return &status, nil
 }
 
 func (n *Node) Get(t *testing.T, key string) string {
+	body, err := n.TryGet(key)
+	if err != nil {
+		t.Fatalf("HTTP request failed for %s: %v", n.id, err)
+	}
+	return body
+}
+
+func (n *Node) TryGet(key string) (string, error) {
 	baseURL := fmt.Sprintf("http://localhost:%s/get", n.port)
 	params := url.Values{}
 	params.Add("key", key)
@@ -72,17 +88,17 @@ func (n *Node) Get(t *testing.T, key string) string {
 	resp, err := http.Get(fullURL)
 
 	if err != nil {
-		t.Fatalf("HTTP request failed for %s: %v", n.id, err)
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf("invalid string from %s: %v", n.id, err)
+		return "", err
 	}
 
-	return string(body)
+	return string(body), nil
 }
 
 func (n *Node) Put(t *testing.T, key string, value string) string {
@@ -162,7 +178,7 @@ func StartNodes(t *testing.T, nodes []*Node, reset string) {
 	for _, node := range nodes {
 		node.StartNode(t, reset)
 	}
-	time.Sleep(10 * time.Second)
+	WaitForLeader(t, nodes, 10*time.Second)
 }
 
 func StopNodes(nodes []*Node) {
@@ -177,7 +193,10 @@ func CountLeader(t *testing.T, nodes []*Node) (*Node, int) {
 
 	for _, node := range nodes {
 		if node.running {
-			status := node.Status(t)
+			status, err := node.TryStatus()
+			if err != nil {
+				continue
+			}
 			if status.State == 2 {
 				leaderCount += 1
 				leader = node
@@ -186,4 +205,57 @@ func CountLeader(t *testing.T, nodes []*Node) (*Node, int) {
 	}
 
 	return leader, leaderCount
+}
+
+func WaitForLeader(t *testing.T, nodes []*Node, timeout time.Duration) *Node {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		leader, leaderCount := CountLeader(t, nodes)
+		if leaderCount == 1 {
+			return leader
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	_, leaderCount := CountLeader(t, nodes)
+	t.Fatalf("timed out waiting for one leader, got %d", leaderCount)
+	return nil
+}
+
+func WaitForValue(t *testing.T, nodes []*Node, key, expected string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		allMatch := true
+		for _, node := range nodes {
+			if !node.running {
+				continue
+			}
+			value, err := node.TryGet(key)
+			if err != nil || value != expected {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	for _, node := range nodes {
+		if !node.running {
+			continue
+		}
+		value, err := node.TryGet(key)
+		if err != nil {
+			t.Fatalf("%s failed to read %s: %v", node.id, key, err)
+		}
+		if value != expected {
+			t.Fatalf("%s has wrong value for %s: got %s, want %s", node.id, key, value, expected)
+		}
+	}
 }
