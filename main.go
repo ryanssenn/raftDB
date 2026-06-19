@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/ryansenn/ryanDB/core"
@@ -18,6 +19,13 @@ func get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	key := r.URL.Query().Get("key")
 	cmd := core.NewCommand("get", key, "")
+	node.Events.Record(core.Event{
+		Type: "client_request",
+		From: "visualizer",
+		To:   node.Id,
+		Op:   "get",
+		Key:  key,
+	})
 	w.Write([]byte(node.HandleCommand(cmd)))
 }
 
@@ -26,16 +34,52 @@ func put(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	value := r.URL.Query().Get("value")
 	cmd := core.NewCommand("put", key, value)
+	node.Events.Record(core.Event{
+		Type: "client_request",
+		From: "visualizer",
+		To:   node.Id,
+		Op:   "put",
+		Key:  key,
+	})
 	w.Write([]byte(node.HandleCommand(cmd)))
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	matchIndex := map[string]int64{}
+	nextIndex := map[string]int64{}
+	for id, val := range node.MatchIndex {
+		if id != node.Id {
+			matchIndex[id] = val.Load()
+		}
+	}
+	for id, val := range node.NextIndex {
+		if id != node.Id {
+			nextIndex[id] = val.Load()
+		}
+	}
+
 	json.NewEncoder(w).Encode(map[string]any{
-		"id":       node.Id,
-		"state":    node.State, // 0-Follower, 1-Candidate, 2-Leader
-		"term":     node.Term.Load(),
-		"leaderId": node.LeaderId.Load(),
+		"id":           node.Id,
+		"state":        node.State,
+		"term":         node.Term.Load(),
+		"leaderId":     node.LeaderId.Load(),
+		"commitIndex":  node.CommitIndex.Load(),
+		"lastApplied":  node.LastApplied.Load(),
+		"logLength":    node.GetLogSize(),
+		"matchIndex":   matchIndex,
+		"nextIndex":    nextIndex,
+	})
+}
+
+func events(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	evts, latest := node.Events.Since(since)
+	json.NewEncoder(w).Encode(map[string]any{
+		"events":    evts,
+		"latestSeq": latest,
 	})
 }
 
@@ -72,9 +116,9 @@ func main() {
 	http.HandleFunc("/get", get)
 	http.HandleFunc("/put", put)
 	http.HandleFunc("/status", status)
+	http.HandleFunc("/events", events)
 
-	//log.Printf("Server ID: %s | Listening on: %s | Peers: %s", *id, *port, *peersStr)
-	log.Fatal(*id+" %s", http.ListenAndServe(":"+*port, nil))
+	log.Fatalf("%s: %v", *id, http.ListenAndServe(":"+*port, nil))
 }
 
 func parsePeers(peersStr string) map[string]string {

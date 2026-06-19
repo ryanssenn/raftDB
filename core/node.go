@@ -43,6 +43,7 @@ type Node struct {
 	ResetElectionTimer chan struct{}
 	Logger             *Logger
 	Storage            *Engine
+	Events             *EventLog
 }
 
 func NewNode(id, port string, peers map[string]string) *Node {
@@ -60,6 +61,7 @@ func NewNode(id, port string, peers map[string]string) *Node {
 		ResetElectionTimer: make(chan struct{}, 1),
 		Logger:             newLogger(id),
 		Storage:            NewEngine(),
+		Events:             NewEventLog(),
 	}
 	n.CommitIndex.Store(-1)
 	n.LastApplied.Store(-1)
@@ -180,6 +182,14 @@ func (n *Node) ForwardToLeader(command *Command) string {
 	}
 
 	log.Printf(n.Id + " has forwarded command to leader " + *n.LeaderId.Load())
+	n.recordEvent(Event{
+		Type: "forward_command",
+		From: n.Id,
+		To:   *n.LeaderId.Load(),
+		Term: n.Term.Load(),
+		Op:   command.Op,
+		Key:  command.Key,
+	})
 	response, err := n.Clients[*n.LeaderId.Load()].ForwardToLeader(context.Background(), &pb.Command{Command: serializedCommand})
 
 	if err != nil {
@@ -219,6 +229,13 @@ func (n *Node) StartElection() {
 	n.Logger.WriteTerm(n.Term.Load())
 	n.Logger.WriteVotedFor(*n.VoteFor.Load())
 	n.State = Candidate
+	n.recordEvent(Event{
+		Type:   "state_change",
+		From:   n.Id,
+		To:     n.Id,
+		Term:   n.Term.Load(),
+		Detail: "candidate",
+	})
 	yesVote := 1
 
 	log.Printf("%s started election for term %d", n.Id, n.Term.Load())
@@ -240,6 +257,13 @@ func (n *Node) StartElection() {
 				LastLogTerm:  prevTerm,
 			}
 
+			n.recordEvent(Event{
+				Type: "request_vote",
+				From: n.Id,
+				To:   id,
+				Term: n.Term.Load(),
+			})
+
 			voteResp, err := client.RequestVote(context.Background(), &voteReq)
 
 			if err != nil {
@@ -255,10 +279,24 @@ func (n *Node) StartElection() {
 
 	if yesVote > len(n.Peers)/2 {
 		n.State = Leader
+		n.recordEvent(Event{
+			Type:   "state_change",
+			From:   n.Id,
+			To:     n.Id,
+			Term:   n.Term.Load(),
+			Detail: "leader",
+		})
 		go n.StartReplicationWorkers()
 		log.Printf("%s becomes Leader for term %d", n.Id, n.Term.Load())
 	} else {
 		n.State = Follower
+		n.recordEvent(Event{
+			Type:   "state_change",
+			From:   n.Id,
+			To:     n.Id,
+			Term:   n.Term.Load(),
+			Detail: "follower",
+		})
 		log.Printf("%s becomes Follower for term %d", n.Id, n.Term.Load())
 	}
 }

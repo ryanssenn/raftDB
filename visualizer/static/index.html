@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raft — Consensus Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <div class="bg-gradient"></div>
+
+    <div id="hud">
+      <header class="hud-bar">
+        <div class="hud-left">
+          <span id="scenario-name" class="hud-scenario"></span>
+          <span id="demo-badge" class="demo-badge">demo pace</span>
+        </div>
+        <div class="hud-metrics">
+          <div class="metric">
+            <span class="metric-label">commit</span>
+            <span id="commit-index-display" class="metric-value">—</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">quorum</span>
+            <span id="quorum-text" class="metric-value">0 / 0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">term</span>
+            <span id="term-display" class="metric-value">—</span>
+          </div>
+        </div>
+        <div class="hud-right">
+          <span id="step-display" class="hud-step"></span>
+          <div class="hud-progress"><div id="progress-fill"></div></div>
+          <span id="status-chip" class="status-chip hidden"></span>
+        </div>
+      </header>
+      <div id="quorum-bar-wrap" class="quorum-bar-wrap">
+        <div id="quorum-fill"></div>
+      </div>
+    </div>
+
+    <div id="viz-wrap">
+      <svg id="viz" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="entryGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#64748b"/>
+          <stop offset="100%" stop-color="#475569"/>
+        </linearGradient>
+        <linearGradient id="committedGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#34d399"/>
+          <stop offset="100%" stop-color="#10b981"/>
+        </linearGradient>
+      </defs>
+      <!-- z: beams → nodes (machine+log) → flow → client → fx -->
+      <g id="layer-beams"></g>
+      <g id="layer-nodes"></g>
+      <g id="layer-flow"></g>
+      <g id="layer-actors"></g>
+      <g id="layer-commit-fx"></g>
+    </svg>
+      <div id="callout" class="callout"></div>
+
+      <div id="scene-card" class="scene-card hidden">
+        <span id="scene-title" class="scene-title"></span>
+        <span id="scene-subtitle" class="scene-subtitle"></span>
+      </div>
+
+      <div id="showcase-timeline" class="showcase-timeline hidden">
+        <div id="showcase-progress"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

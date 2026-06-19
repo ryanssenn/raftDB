@@ -1,0 +1,33 @@
+{
+  "name": "Raft in Action",
+  "nodes": 5,
+  "steps": [
+    { "wait": "5s", "comment": "initial leader election" },
+    { "put": { "node": "node3", "key": "user:1", "value": "alice" }, "comment": "write via follower" },
+    { "wait": "5s", "comment": "watch replication" },
+    { "put": { "node": "node5", "key": "user:2", "value": "bob" } },
+    { "wait": "5s" },
+    { "get": { "node": "node2", "key": "user:1", "expect": "alice" } },
+    { "wait": "4s" },
+    { "put": { "node": "node4", "key": "user:3", "value": "carol" } },
+    { "wait": "5s" },
+    { "kill": "node1", "comment": "kill the leader" },
+    { "wait": "6s", "comment": "watch re-election" },
+    { "put": { "node": "node2", "key": "user:4", "value": "dave" } },
+    { "wait": "5s" },
+    { "kill": "node3", "comment": "kill another node" },
+    { "wait": "4s" },
+    { "put": { "node": "node5", "key": "user:5", "value": "eve" } },
+    { "wait": "5s" },
+    { "restart": "node1", "comment": "node1 rejoins cluster" },
+    { "wait": "6s", "comment": "catch-up replication" },
+    { "restart": "node3" },
+    { "wait": "6s" },
+    { "get": { "node": "node1", "key": "user:5", "expect": "eve" } },
+    { "wait": "4s" },
+    { "put": { "node": "node1", "key": "user:6", "value": "frank" } },
+    { "wait": "5s" },
+    { "get": { "node": "node3", "key": "user:6", "expect": "frank" } },
+    { "wait": "3s" }
+  ]
+}
