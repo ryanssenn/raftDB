@@ -31,7 +31,7 @@
     { "wait": "1s", "comment": "pause before leader failure" },
     { "kill": "leader", "comment": "kill leader (~11.5s)" },
     { "wait": "3s", "comment": "election" },
-    { "put": { "node": "node3", "key": "user:6", "value": "frank" } },
+    { "put": { "node": "node1", "key": "user:6", "value": "frank" }, "comment": "writes under new leader — killed node still offline" },
     { "wait": "1.5s" },
     { "put": { "node": "node5", "key": "user:7", "value": "grace" } },
     { "wait": "1.5s" },

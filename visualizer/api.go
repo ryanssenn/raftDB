@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// Client requests must not hang forever when the leader is dead mid-commit.
+var visualizerHTTPClient = &http.Client{Timeout: 3 * time.Second}
+
 type NodeStatus struct {
 	ID          string           `json:"id"`
 	Running     bool             `json:"running"`
@@ -26,24 +29,24 @@ type NodeStatus struct {
 }
 
 type Server struct {
-	mu              sync.RWMutex
-	cluster         *Cluster
-	scenario        *Scenario
-	binaryPath      string
-	demoPace        bool
-	showcaseStart   time.Time
-	cycle           int
-	stepIndex       int
-	currentDesc     string
-	done            bool
-	err             string
-	scenarioLog     []string
-	eventSince      map[string]int64
-	lastKilled      string
+	mu            sync.RWMutex
+	cluster       *Cluster
+	scenario      *Scenario
+	binaryPath    string
+	demoPace      bool
+	showcaseStart time.Time
+	cycle         int
+	stepIndex     int
+	currentDesc   string
+	done          bool
+	err           string
+	scenarioLog   []string
+	eventSince    map[string]int64
+	lastKilled    string
 }
 
 func fetchStatus(port string) (*NodeStatus, error) {
-	resp, err := http.Get("http://localhost:" + port + "/status")
+	resp, err := visualizerHTTPClient.Get("http://localhost:" + port + "/status")
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +99,7 @@ func toInt64Map(m map[string]any) map[string]int64 {
 }
 
 func fetchEvents(port string, since int64) ([]Event, int64, error) {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%s/events?since=%d", port, since))
+	resp, err := visualizerHTTPClient.Get(fmt.Sprintf("http://localhost:%s/events?since=%d", port, since))
 	if err != nil {
 		return nil, since, err
 	}
@@ -129,7 +132,7 @@ func doPut(port, key, value string) (string, error) {
 	params := url.Values{}
 	params.Set("key", key)
 	params.Set("value", value)
-	resp, err := http.Get("http://localhost:" + port + "/put?" + params.Encode())
+	resp, err := visualizerHTTPClient.Get("http://localhost:" + port + "/put?" + params.Encode())
 	if err != nil {
 		return "", err
 	}
@@ -144,7 +147,7 @@ func doPut(port, key, value string) (string, error) {
 func doGet(port, key string) (string, error) {
 	params := url.Values{}
 	params.Set("key", key)
-	resp, err := http.Get("http://localhost:" + port + "/get?" + params.Encode())
+	resp, err := visualizerHTTPClient.Get("http://localhost:" + port + "/get?" + params.Encode())
 	if err != nil {
 		return "", err
 	}
@@ -161,19 +164,19 @@ func (srv *Server) handleScenario(w http.ResponseWriter, r *http.Request) {
 	defer srv.mu.RUnlock()
 
 	resp := map[string]any{
-		"name":         srv.scenario.Name,
-		"nodes":        srv.scenario.Nodes,
-		"stepIndex":    srv.stepIndex,
-		"totalSteps":   len(srv.scenario.Steps),
-		"currentStep":  srv.currentDesc,
-		"done":         srv.done,
-		"error":        srv.err,
-		"demoPace":     srv.demoPace,
-		"showcase":     srv.scenario.Showcase,
-		"loop":         srv.scenario.Loop,
-		"cycle":        srv.cycle,
-		"durationMs":   srv.scenario.DurationMs,
-		"scenes":       srv.scenario.Scenes,
+		"name":        srv.scenario.Name,
+		"nodes":       srv.scenario.Nodes,
+		"stepIndex":   srv.stepIndex,
+		"totalSteps":  len(srv.scenario.Steps),
+		"currentStep": srv.currentDesc,
+		"done":        srv.done,
+		"error":       srv.err,
+		"demoPace":    srv.demoPace,
+		"showcase":    srv.scenario.Showcase,
+		"loop":        srv.scenario.Loop,
+		"cycle":       srv.cycle,
+		"durationMs":  srv.scenario.DurationMs,
+		"scenes":      srv.scenario.Scenes,
 	}
 	if srv.scenario.Showcase && !srv.showcaseStart.IsZero() {
 		resp["showcaseStartMs"] = srv.showcaseStart.UnixMilli()

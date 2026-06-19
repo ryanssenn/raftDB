@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// Prevent integration tests from hanging until go test's 10m default timeout.
+var testHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 func KillPorts(n int) {
 	for i := 0; i < n; i++ {
 		for _, port := range []int{8001 + i, 9001 + i} {
@@ -54,7 +57,7 @@ func (n *Node) Status(t *testing.T) *Status {
 
 func (n *Node) TryStatus() (*Status, error) {
 	url := fmt.Sprintf("http://localhost:%s/status", n.port)
-	resp, err := http.Get(url)
+	resp, err := testHTTPClient.Get(url)
 
 	if err != nil {
 		return nil, err
@@ -85,7 +88,7 @@ func (n *Node) TryGet(key string) (string, error) {
 
 	fullURL := baseURL + "?" + params.Encode()
 
-	resp, err := http.Get(fullURL)
+	resp, err := testHTTPClient.Get(fullURL)
 
 	if err != nil {
 		return "", err
@@ -109,7 +112,7 @@ func (n *Node) Put(t *testing.T, key string, value string) string {
 
 	fullURL := baseURL + "?" + params.Encode()
 
-	resp, err := http.Get(fullURL)
+	resp, err := testHTTPClient.Get(fullURL)
 
 	if err != nil {
 		t.Fatalf("HTTP request failed for %s: %v", n.id, err)

@@ -29,4 +29,4 @@ jobs:
         run: go build -o ryanDB .
 
       - name: Run integration tests
-        run: go test -v ./test
+        run: go test -timeout 5m -v ./test

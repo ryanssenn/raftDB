@@ -268,6 +268,17 @@ func compressWait(d time.Duration) time.Duration {
 	return time.Duration(compressed) * time.Millisecond
 }
 
+func (srv *Server) continueOnClientError(err error, msg string) error {
+	if err == nil {
+		return nil
+	}
+	if srv.scenario.Showcase {
+		srv.appendLog("  (missed) " + msg + ": " + err.Error())
+		return nil
+	}
+	return err
+}
+
 func (srv *Server) executeStep(step Step) error {
 	switch {
 	case step.Wait != "":
@@ -326,11 +337,14 @@ func (srv *Server) executeStep(step Step) error {
 			return fmt.Errorf("node %s not found", step.Put.Node)
 		}
 		if !node.Running {
-			return fmt.Errorf("node %s is not running", step.Put.Node)
+			return srv.continueOnClientError(
+				fmt.Errorf("node %s is not running", step.Put.Node),
+				"write",
+			)
 		}
 		result, err := doPut(node.Port, step.Put.Key, step.Put.Value)
 		if err != nil {
-			return err
+			return srv.continueOnClientError(err, "write")
 		}
 		srv.appendLog("  → " + result)
 		return nil
@@ -342,15 +356,21 @@ func (srv *Server) executeStep(step Step) error {
 			return fmt.Errorf("node %s not found", step.Get.Node)
 		}
 		if !node.Running {
-			return fmt.Errorf("node %s is not running", step.Get.Node)
+			return srv.continueOnClientError(
+				fmt.Errorf("node %s is not running", step.Get.Node),
+				"read",
+			)
 		}
 		result, err := doGet(node.Port, step.Get.Key)
 		if err != nil {
-			return err
+			return srv.continueOnClientError(err, "read")
 		}
 		srv.appendLog("  → " + result)
 		if step.Get.Expect != "" && result != step.Get.Expect {
-			return fmt.Errorf("expected %q, got %q", step.Get.Expect, result)
+			return srv.continueOnClientError(
+				fmt.Errorf("expected %q, got %q", step.Get.Expect, result),
+				"read",
+			)
 		}
 		return nil
 

@@ -23,7 +23,7 @@ Timeline (approximate):
 | 19–54s | Continuous writes every 1.5s |
 | 54–60s | Brief stable beat, loop restarts |
 
-Nodes boot on a **500ms stagger** (backend + UI reveal) so the cluster starts empty and fills in before the first write.
+Showcase mode uses exact timing and **continues past missed writes** during leader failure (logged as `(missed)` in the scenario log, animation keeps running).
 
 ### Full demo (~2 minutes)
 
