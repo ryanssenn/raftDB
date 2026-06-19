@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -47,6 +48,7 @@ func (n *Node) StartReplicationWorkers() {
 }
 
 func (n *Node) ReplicateToFollower(id string) {
+	var lastHeartbeatEvent time.Time
 	for n.State == Leader {
 		startIndex := n.NextIndex[id].Load()
 		prevIndex := startIndex - 1
@@ -80,20 +82,56 @@ func (n *Node) ReplicateToFollower(id string) {
 			LeaderCommit: n.CommitIndex.Load(),
 		}
 
+		sendHBEvent := false
+		if len(entries) > 0 {
+			n.recordEvent(Event{
+				Type:    "append_entries",
+				From:    n.Id,
+				To:      id,
+				Term:    n.Term.Load(),
+				Entries: len(entries),
+			})
+		} else if time.Since(lastHeartbeatEvent) >= 2*time.Second {
+			sendHBEvent = true
+			lastHeartbeatEvent = time.Now()
+			n.recordEvent(Event{
+				Type:    "append_entries",
+				From:    n.Id,
+				To:      id,
+				Term:    n.Term.Load(),
+				Entries: 0,
+			})
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		resp, err := n.Clients[id].AppendEntries(ctx, &req)
 		cancel()
 
-		if err == nil && len(entries) > 0 {
-			if resp.Success {
+		if err == nil && resp.Success {
+			if len(entries) > 0 {
+				n.recordEvent(Event{
+					Type:    "append_response",
+					From:    id,
+					To:      n.Id,
+					Term:    n.Term.Load(),
+					Entries: len(entries),
+				})
 				added := int64(len(req.Entries))
 				n.NextIndex[id].Add(added)
 				n.MatchIndex[id].Store(n.NextIndex[id].Load() - 1)
 				n.UpdateCommitIndex()
-			} else {
-				if n.NextIndex[id].Load() > 0 {
-					n.NextIndex[id].Add(-1)
-				}
+			} else if sendHBEvent {
+				n.recordEvent(Event{
+					Type:    "append_response",
+					From:    id,
+					To:      n.Id,
+					Term:    n.Term.Load(),
+					Entries: 0,
+				})
+			}
+		} else if err == nil && len(entries) > 0 {
+			if n.NextIndex[id].Load() > 0 {
+				n.NextIndex[id].Add(-1)
 			}
 		}
 
@@ -120,6 +158,13 @@ func (n *Node) UpdateCommitIndex() {
 			n.CommitCond.Broadcast()
 			n.CommitCond.L.Unlock()
 			log.Printf(n.Id+" has updated commit index to %d", i)
+			n.recordEvent(Event{
+				Type:   "commit",
+				From:   n.Id,
+				To:     n.Id,
+				Term:   n.Term.Load(),
+				Detail: fmt.Sprintf("%d", i),
+			})
 			n.ApplyCommitted()
 			return
 		}

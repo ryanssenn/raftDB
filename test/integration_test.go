@@ -112,16 +112,19 @@ func TestMissedLogsRecovery(t *testing.T) {
 	defer StopNodes(nodes)
 
 	nodes[0].StopNode()
+	WaitForLeader(t, nodes[1:], 10*time.Second)
 
 	activeNodes := nodes[1:]
 	for i := 1; i < 10; i++ {
 		key := fmt.Sprintf("key%d", i)
 		value := fmt.Sprintf("value%d", i)
 		activeNodes[rand.Intn(len(activeNodes))].Put(t, key, value)
+		WaitForValue(t, activeNodes, key, value, 15*time.Second)
 	}
 
 	nodes[0].StartNode(t, "false")
-	WaitForValue(t, []*Node{nodes[0]}, "key9", "value9", 10*time.Second)
+	WaitForLeader(t, nodes, 10*time.Second)
+	WaitForValue(t, []*Node{nodes[0]}, "key9", "value9", 20*time.Second)
 
 	for i := 1; i < 10; i++ {
 		key := fmt.Sprintf("key%d", i)

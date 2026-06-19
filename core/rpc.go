@@ -153,6 +153,13 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 	s.node.VoteFor.Store(&req.CandidateId)
 	s.node.Logger.WriteVotedFor(req.CandidateId)
 	s.node.ReceiveHeartbeat()
+	s.node.recordEvent(Event{
+		Type:   "request_vote",
+		From:   s.node.Id,
+		To:     req.CandidateId,
+		Term:   s.node.Term.Load(),
+		Detail: "granted",
+	})
 	log.Printf("%s has granted vote to %s in term %d", s.node.Id, req.CandidateId, s.node.Term.Load())
 	return &resp, nil
 }

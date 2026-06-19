@@ -1,0 +1,200 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type ClusterNode struct {
+	ID      string
+	Port    string
+	Peers   string
+	Cmd     *exec.Cmd
+	Running bool
+}
+
+type Cluster struct {
+	Nodes []*ClusterNode
+}
+
+func KillPorts(n int) {
+	for i := 0; i < n; i++ {
+		for _, port := range []int{8001 + i, 9001 + i} {
+			out, err := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
+			if err != nil {
+				continue
+			}
+			for _, pid := range strings.Fields(string(out)) {
+				_ = exec.Command("kill", "-9", pid).Run()
+			}
+		}
+	}
+}
+
+func buildPeers(n int) string {
+	parts := make([]string, n)
+	for i := 0; i < n; i++ {
+		id := "node" + strconv.Itoa(i+1)
+		addr := "localhost:" + strconv.Itoa(9001+i)
+		parts[i] = id + "=" + addr
+	}
+	return strings.Join(parts, ",")
+}
+
+func NewCluster(n int) *Cluster {
+	peers := buildPeers(n)
+	nodes := make([]*ClusterNode, n)
+	for i := 0; i < n; i++ {
+		nodes[i] = &ClusterNode{
+			ID:   "node" + strconv.Itoa(i+1),
+			Port: strconv.Itoa(8001 + i),
+			Peers: peers,
+		}
+	}
+	return &Cluster{Nodes: nodes}
+}
+
+func (c *Cluster) StartStaggered(binary string, reset bool, interval time.Duration) error {
+	for i, node := range c.Nodes {
+		rs := "false"
+		if reset {
+			rs = "true"
+		}
+		if err := node.Start(binary, rs); err != nil {
+			return err
+		}
+		if i < len(c.Nodes)-1 {
+			time.Sleep(interval)
+		}
+	}
+	return nil
+}
+
+func (c *Cluster) StartAll(binary string, reset bool) error {
+	resetStr := "false"
+	if reset {
+		resetStr = "true"
+	}
+	for _, node := range c.Nodes {
+		if err := node.Start(binary, resetStr); err != nil {
+			return err
+		}
+	}
+	return WaitForLeader(c, 15*time.Second)
+}
+
+func (c *Cluster) StopAll() {
+	for _, node := range c.Nodes {
+		node.Stop()
+	}
+}
+
+func (n *ClusterNode) Start(binary, reset string) error {
+	cmd := exec.Command(binary,
+		"--id="+n.ID,
+		"--port="+n.Port,
+		"--peers="+n.Peers,
+		"--reset="+reset,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start %s: %w", n.ID, err)
+	}
+	n.Cmd = cmd
+	n.Running = true
+	return nil
+}
+
+func (n *ClusterNode) Stop() {
+	if n.Cmd != nil && n.Cmd.Process != nil {
+		_ = n.Cmd.Process.Kill()
+		n.Running = false
+		_ = n.Cmd.Wait()
+		n.Cmd = nil
+	}
+}
+
+func (n *ClusterNode) Restart(binary string) error {
+	n.Stop()
+	return n.Start(binary, "false")
+}
+
+func (c *Cluster) NodeByID(id string) *ClusterNode {
+	for _, node := range c.Nodes {
+		if node.ID == id {
+			return node
+		}
+	}
+	return nil
+}
+
+func WaitForLeader(c *Cluster, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		_, count := countLeader(c)
+		if count == 1 {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	_, count := countLeader(c)
+	return fmt.Errorf("timed out waiting for leader, got %d leaders", count)
+}
+
+func countLeader(c *Cluster) (*ClusterNode, int) {
+	count := 0
+	var leader *ClusterNode
+	for _, node := range c.Nodes {
+		if !node.Running {
+			continue
+		}
+		status, err := fetchStatus(node.Port)
+		if err != nil {
+			continue
+		}
+		if status.State == 2 {
+			count++
+			leader = node
+		}
+	}
+	return leader, count
+}
+
+func ensureBinary(repoRoot, binaryPath string) (string, error) {
+	if binaryPath != "" {
+		return binaryPath, nil
+	}
+	path := repoRoot + "/ryanDB"
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	cmd := exec.Command("go", "build", "-o", "ryanDB", ".")
+	cmd.Dir = repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("build ryanDB: %w\n%s", err, out)
+	}
+	return path, nil
+}
+
+func findRepoRoot() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	if _, err := os.Stat(wd + "/main.go"); err == nil {
+		return wd
+	}
+	if _, err := os.Stat(wd + "/../main.go"); err == nil {
+		return wd + "/.."
+	}
+	return wd
+}
+
+func openBrowser(url string) {
+	exec.Command("open", url).Start()
+}
