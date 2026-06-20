@@ -2,3 +2,4 @@ changes.txt
 logs/
 .vscode/
 ryanDB
+benchmarks/results/node-logs/
