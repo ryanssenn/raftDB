@@ -10,7 +10,7 @@ jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -28,5 +28,8 @@ jobs:
       - name: Build binary
         run: go build -o ryanDB .
 
+      - name: Run unit tests with race detector
+        run: go test -race -count=1 -timeout 5m ./core
+
       - name: Run integration tests
-        run: go test -timeout 5m -v ./test
+        run: go test -count=3 -timeout 10m -v ./test

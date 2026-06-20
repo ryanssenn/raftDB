@@ -17,11 +17,11 @@ func (n *Node) AppendLog(cmd *Command) int {
 	defer n.LogMu.Unlock()
 	n.Logger.AppendLog(entry)
 	n.Log = append(n.Log, entry)
-	log.Printf(n.Id + " has appended 1 new log")
+	log.Printf("%s has appended 1 new log", n.Id)
 	return len(n.Log) - 1
 }
 
-// Used by leader to append a command and block until committed
+// Used by leader to append a command and block until committed and applied
 func (n *Node) Commit(cmd *Command) {
 	index := int64(n.AppendLog(cmd))
 	n.CommitCond.L.Lock()
@@ -29,6 +29,12 @@ func (n *Node) Commit(cmd *Command) {
 		n.CommitCond.Wait()
 	}
 	n.CommitCond.L.Unlock()
+
+	n.ApplyCond.L.Lock()
+	for index > n.LastApplied.Load() {
+		n.ApplyCond.Wait()
+	}
+	n.ApplyCond.L.Unlock()
 }
 
 func (n *Node) StartReplicationWorkers() {
@@ -103,7 +109,7 @@ func (n *Node) ReplicateToFollower(id string) {
 			})
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		resp, err := n.Clients[id].AppendEntries(ctx, &req)
 		cancel()
 
@@ -135,7 +141,7 @@ func (n *Node) ReplicateToFollower(id string) {
 			}
 		}
 
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -155,9 +161,8 @@ func (n *Node) UpdateCommitIndex() {
 		if i > n.CommitIndex.Load() && count > len(n.MatchIndex)/2 {
 			n.CommitCond.L.Lock()
 			n.CommitIndex.Store(i)
-			n.CommitCond.Broadcast()
 			n.CommitCond.L.Unlock()
-			log.Printf(n.Id+" has updated commit index to %d", i)
+			log.Printf("%s has updated commit index to %d", n.Id, i)
 			n.recordEvent(Event{
 				Type:   "commit",
 				From:   n.Id,
@@ -166,6 +171,9 @@ func (n *Node) UpdateCommitIndex() {
 				Detail: fmt.Sprintf("%d", i),
 			})
 			n.ApplyCommitted()
+			n.CommitCond.L.Lock()
+			n.CommitCond.Broadcast()
+			n.CommitCond.L.Unlock()
 			return
 		}
 	}

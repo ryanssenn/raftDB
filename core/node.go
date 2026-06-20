@@ -12,6 +12,34 @@ import (
 	pb "github.com/ryansenn/ryanDB/proto/nodepb"
 )
 
+const rpcTimeout = 500 * time.Millisecond
+
+func storeString(p *atomic.Pointer[string], s string) {
+	v := new(string)
+	*v = s
+	p.Store(v)
+}
+
+func contextWithRPCTimeout() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), rpcTimeout)
+}
+
+func (n *Node) leaderID() string {
+	p := n.LeaderId.Load()
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func (n *Node) voteFor() string {
+	p := n.VoteFor.Load()
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 type NodeState int
 
 const (
@@ -65,9 +93,8 @@ func NewNode(id, port string, peers map[string]string) *Node {
 	}
 	n.CommitIndex.Store(-1)
 	n.LastApplied.Store(-1)
-	empty := ""
-	n.VoteFor.Store(&empty)
-	n.LeaderId.Store(&empty)
+	storeString(&n.VoteFor, "")
+	storeString(&n.LeaderId, "")
 
 	for key, _ := range n.Peers {
 		n.NextIndex[key] = &atomic.Int64{}
@@ -78,7 +105,7 @@ func NewNode(id, port string, peers map[string]string) *Node {
 }
 
 func (n *Node) Init() {
-	log.Printf(n.Id + " has been initialized.")
+	log.Printf("%s has been initialized.", n.Id)
 	n.StartServer()
 	n.StartClients()
 	n.StartElectionTimer()
@@ -91,7 +118,14 @@ func (n *Node) RecoverState() {
 
 	term, votedFor := n.Logger.LoadMeta()
 	n.Term.Store(term)
-	n.VoteFor.Store(&votedFor)
+	storeString(&n.VoteFor, votedFor)
+
+	if len(n.Log) > 0 {
+		last := int64(len(n.Log) - 1)
+		n.CommitIndex.Store(last)
+		n.LastApplied.Store(-1)
+		n.ApplyCommitted()
+	}
 }
 
 func (n *Node) HandleCommand(cmd *Command) string {
@@ -126,7 +160,7 @@ func (n *Node) AppendLogs(PrevLogIndex int64, entries []*LogEntry) {
 	//persistent
 	n.Logger.AppendLogs(entries, PrevLogIndex+1)
 
-	log.Printf(n.Id+" has appended %d new log", len(entries))
+	log.Printf("%s has appended %d new log", n.Id, len(entries))
 }
 
 func (n *Node) ApplyCommitted() {
@@ -138,6 +172,7 @@ func (n *Node) ApplyCommitted() {
 	}
 
 	n.ApplyMu.Unlock()
+	n.ApplyCond.Broadcast()
 }
 
 // Provide linearizable reads
@@ -177,20 +212,25 @@ func (n *Node) ForwardToLeader(command *Command) string {
 		log.Print(err)
 	}
 
-	if *n.LeaderId.Load() == "" {
+	if n.leaderID() == "" {
 		return "no leader elected yet"
 	}
 
-	log.Printf(n.Id + " has forwarded command to leader " + *n.LeaderId.Load())
+	log.Printf("%s has forwarded command to leader %s", n.Id, n.leaderID())
 	n.recordEvent(Event{
 		Type: "forward_command",
 		From: n.Id,
-		To:   *n.LeaderId.Load(),
+		To:   n.leaderID(),
 		Term: n.Term.Load(),
 		Op:   command.Op,
 		Key:  command.Key,
 	})
-	response, err := n.Clients[*n.LeaderId.Load()].ForwardToLeader(context.Background(), &pb.Command{Command: serializedCommand})
+	ctx, cancel := contextWithRPCTimeout()
+	defer cancel()
+	response, err := n.Clients[n.leaderID()].ForwardToLeader(
+		ctx,
+		&pb.Command{Command: serializedCommand},
+	)
 
 	if err != nil {
 		log.Print(err)
@@ -224,10 +264,10 @@ func (n *Node) StartElectionTimer() {
 }
 
 func (n *Node) StartElection() {
-	n.VoteFor.Store(&n.Id)
+	storeString(&n.VoteFor, n.Id)
 	n.Term.Add(1)
 	n.Logger.WriteTerm(n.Term.Load())
-	n.Logger.WriteVotedFor(*n.VoteFor.Load())
+	n.Logger.WriteVotedFor(n.voteFor())
 	n.State = Candidate
 	n.recordEvent(Event{
 		Type:   "state_change",
@@ -264,7 +304,9 @@ func (n *Node) StartElection() {
 				Term: n.Term.Load(),
 			})
 
-			voteResp, err := client.RequestVote(context.Background(), &voteReq)
+			ctx, cancel := contextWithRPCTimeout()
+			voteResp, err := client.RequestVote(ctx, &voteReq)
+			cancel()
 
 			if err != nil {
 				log.Print(err)

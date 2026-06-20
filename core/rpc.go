@@ -85,7 +85,7 @@ func (s *server) AppendEntries(ctx context.Context, req *pb.AppendRequest) (*pb.
 	}
 
 	s.node.ReceiveHeartbeat()
-	s.node.LeaderId.Store(&req.LeaderId)
+	storeString(&s.node.LeaderId, req.LeaderId)
 
 	if req.Term > term {
 		s.node.Term.Store(req.Term)
@@ -115,7 +115,7 @@ func (s *server) AppendEntries(ctx context.Context, req *pb.AppendRequest) (*pb.
 
 	if req.LeaderCommit > s.node.CommitIndex.Load() {
 		s.node.CommitIndex.Store(min(req.LeaderCommit, int64(s.node.GetLogSize()-1)))
-		log.Printf(s.node.Id+" has updated commit index to %d", req.LeaderCommit)
+		log.Printf("%s has updated commit index to %d", s.node.Id, req.LeaderCommit)
 		s.node.ApplyCommitted()
 	}
 
@@ -129,15 +129,14 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 		s.node.ReceiveHeartbeat()
 		s.node.State = Follower
 		s.node.Term.Store(req.Term)
-		empty := ""
-		s.node.VoteFor.Store(&empty)
+		storeString(&s.node.VoteFor, "")
 		s.node.Logger.WriteTerm(s.node.Term.Load())
-		s.node.Logger.WriteVotedFor(*s.node.VoteFor.Load())
+		s.node.Logger.WriteVotedFor(s.node.voteFor())
 	}
 
 	resp := pb.VoteResponse{Term: s.node.Term.Load(), VoteGranted: false}
 
-	if *s.node.VoteFor.Load() != "" && *s.node.VoteFor.Load() != req.CandidateId {
+	if s.node.voteFor() != "" && s.node.voteFor() != req.CandidateId {
 		return &resp, nil
 	}
 
@@ -150,7 +149,7 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 	}
 
 	resp.VoteGranted = true
-	s.node.VoteFor.Store(&req.CandidateId)
+	storeString(&s.node.VoteFor, req.CandidateId)
 	s.node.Logger.WriteVotedFor(req.CandidateId)
 	s.node.ReceiveHeartbeat()
 	s.node.recordEvent(Event{
@@ -166,7 +165,17 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 
 func (s *server) ForwardToLeader(ctx context.Context, command *pb.Command) (*pb.CommandResponse, error) {
 	if s.node.State == Follower {
-		return s.node.Clients[*s.node.LeaderId.Load()].ForwardToLeader(context.Background(), command)
+		leaderID := s.node.leaderID()
+		if leaderID == "" {
+			return &pb.CommandResponse{Result: []byte("no leader elected yet")}, nil
+		}
+		client := s.node.Clients[leaderID]
+		if client == nil {
+			return &pb.CommandResponse{Result: []byte("leader not accessible")}, nil
+		}
+		ctx, cancel := contextWithRPCTimeout()
+		defer cancel()
+		return client.ForwardToLeader(ctx, command)
 	}
 
 	var cmd Command

@@ -82,6 +82,8 @@ func (l *Logger) WriteTerm(term int64) {
 	l.metaMu.Lock()
 	defer l.metaMu.Unlock()
 
+	l.metaFile.Seek(0, io.SeekStart)
+
 	var metaData MetaData
 	decoder := json.NewDecoder(l.metaFile)
 	err := decoder.Decode(&metaData)
@@ -185,6 +187,8 @@ func decodeLogEntry(buf []byte) *LogEntry {
 func (l *Logger) LoadMeta() (int64, string) {
 	l.metaMu.Lock()
 	defer l.metaMu.Unlock()
+
+	l.metaFile.Seek(0, io.SeekStart)
 
 	var metaData MetaData
 	decoder := json.NewDecoder(l.metaFile)
