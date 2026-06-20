@@ -16,8 +16,6 @@ This is not a production database. The core of the project is Raft: leader elect
 | Write latency, p99 (16 clients) | ~31 ms |
 | Failover recovery after leader crash | ~357 ms |
 
-<img width="1280" height="786" alt="raft_demo" src="https://github.com/user-attachments/assets/561f122b-9ff0-4ab1-923f-832048c5d95b" />
-
 ## What gets implemented
 
 The code follows the paper's main pieces:
