@@ -1,12 +1,12 @@
 # RaftDB
 
-A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf), built for learning how replicated consensus actually works.
+A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf) with a small in-memory key-value store on top. The goal is to learn how replicated consensus works; this is not a production database.
 
-This is not a production database. The core of the project is Raft: leader election, log replication, persistence, and recovery. On top of that there is a tiny in-memory key-value store (the state machine), HTTP endpoints so you can poke at a running cluster from your browser or curl, and an integration test suite that spins up real multi-node processes and breaks things on purpose.
+The implementation covers leader election, log replication, disk persistence, and recovery. Clients use HTTP; nodes exchange Raft RPCs over gRPC.
 
 ## Benchmarks
 
-3-node cluster, single host (see [`benchmarks/REPORT.md`](benchmarks/REPORT.md) for full results and graphs):
+3-node cluster on a single host ([full report](benchmarks/REPORT.md)):
 
 | Metric | Result |
 |---|---|
@@ -16,49 +16,15 @@ This is not a production database. The core of the project is Raft: leader elect
 | Write latency, p99 (16 clients) | ~31 ms |
 | Failover recovery after leader crash | ~357 ms |
 
-## What gets implemented
-
-The code follows the paper's main pieces:
-
-- **Leader election** with randomized timeouts (300-450ms)
-- **Log replication** through `AppendEntries`, with `nextIndex` / `matchIndex` for catch-up
-- **Persistence** via per-node `.rlog` (log entries) and `.meta` (current term, voted-for) files under `logs/`
-- **State machine apply** after commit (a simple `get` / `put` map)
-
-Writes go through Raft. Reads on the leader wait until committed entries have been applied. Followers forward client requests to the leader over gRPC.
-
-## Project layout
-
-```
-main.go          HTTP server, wires up a node
-core/            Raft logic (node, leader, rpc, log, storage)
-proto/           gRPC definitions and generated code
-test/            Integration tests (spins up real nodes)
-launch_node.sh   Helper script to start one node
-```
-
-If you are reading this to understand Raft, start in `core/node.go` and `core/leader.go`, then look at `core/rpc.go` for the RPC handlers.
-
-<img width="60%" height="60%" alt="Raft state diagram" src="https://github.com/user-attachments/assets/6c7bf543-4297-4383-9367-21f5dbeb4911" />
+These numbers come from a Cursor Cloud VM with 4 vCPUs, 16 GB RAM, and Go 1.24.0. Re-run with `go run ./benchmarks` on your own machine.
 
 ## Running a cluster
 
-Each node uses **two ports**:
-
-- **HTTP** (client API): set with `--port`
-- **gRPC** (node-to-node Raft RPCs): set in `--peers` as `id=host:port`
-
-These must be different. The test suite uses HTTP on `8001-8005` and gRPC on `9001-9005`.
-
-**Build:**
+Each node needs an HTTP port (`--port`) and a gRPC port (in `--peers` as `id=host:port`). Start at least three nodes for a working cluster.
 
 ```bash
 go build -o ryanDB .
-```
 
-**Start node 1** (fresh logs):
-
-```bash
 ./ryanDB \
   --id=node1 \
   --port=8001 \
@@ -66,27 +32,15 @@ go build -o ryanDB .
   --reset=true
 ```
 
-Start `node2` on port `8002` and `node3` on port `8003` with the same peers string. Use `--reset=false` on later runs to keep existing log files.
-
-Or use the helper script (starts one node at a time):
-
-```bash
-./launch_node.sh 1 true
-```
-
-Give the cluster a second or two after startup before sending requests.
+Start `node2` and `node3` on ports `8002`/`8003` with the same `--peers` string. Use `--reset=false` to keep logs between restarts, or `./launch_node.sh 1 true` to start one node via the helper script.
 
 ## HTTP API
 
-These exist so you can interact with a running cluster without writing gRPC clients. They are intentionally simple, not a real REST design.
-
-| Endpoint | What it does |
+| Endpoint | Description |
 |---|---|
-| `GET /get?key=<key>` | Read a key (forwarded to leader if needed) |
-| `GET /put?key=<key>&value=<value>` | Write a key (goes through Raft) |
-| `GET /status` | JSON with node id, term, state (0=follower, 1=candidate, 2=leader), leader id |
-
-Example:
+| `GET /put?key=<key>&value=<value>` | Write a key |
+| `GET /get?key=<key>` | Read a key |
+| `GET /status` | Node id, term, role, and leader |
 
 ```bash
 curl "http://localhost:8001/put?key=foo&value=bar"
@@ -96,32 +50,23 @@ curl "http://localhost:8001/status"
 
 ## Tests
 
-The integration tests build the `ryanDB` binary, launch a 5-node cluster, and drive it over HTTP. Run them from the repo root:
+Integration tests build the binary, launch a 5-node cluster, and drive it over HTTP:
 
 ```bash
 go test -v ./test
 ```
 
-The suite has also been run with Go's race detector:
+## Layout
 
-```bash
-go test -race ./...
-```
-
-Recent result on a local machine: all packages passed, including the integration suite.
-
-| Test | What it checks |
+| Path | Purpose |
 |---|---|
-| `TestElection` | Kill the leader, a new one shows up |
-| `TestLogReplication` | A write on one node is readable on all nodes |
-| `Test100LogReplication` | 99 writes routed to random nodes, all nodes agree at the end |
-| `TestLogPersistence` | Kill and restart every node, data survives |
-| `TestMissedLogsRecovery` | A node that was offline catches up when it comes back |
-| `TestFollowerChurnUnderLoad` | Random followers die and restart under continuous writes |
-| `TestNetworkPartition` | Minority nodes go offline, majority keeps committing, everyone converges after restart |
+| `core/` | Raft logic |
+| `main.go` | HTTP server entrypoint |
+| `test/` | Integration tests |
+| `visualizer/` | Optional browser demo |
 
-## Not implemented yet
+## Not yet implemented
 
-- Log compaction / snapshotting
-- Proper linearizable reads (the current read path is a simplified version)
-- Dynamic cluster membership (peers are fixed at startup)
+- Log compaction / snapshots
+- Linearizable reads
+- Dynamic cluster membership
