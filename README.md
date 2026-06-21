@@ -68,5 +68,4 @@ go test -v ./test
 ## Not yet implemented
 
 - Log compaction / snapshots
-- Linearizable reads
 - Dynamic cluster membership

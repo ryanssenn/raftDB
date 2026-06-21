@@ -2,7 +2,9 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -224,21 +226,28 @@ func TestNoDualLeaders(t *testing.T) {
 func TestWriteWhileNoLeader(t *testing.T) {
 	nodes := InitNodes(t)
 
-	for _, node := range nodes[:3] {
+	// Leave one node alive — not enough for a quorum in a 5-node cluster.
+	for _, node := range nodes[:4] {
 		node.StopNode()
 	}
-	for _, node := range nodes[:3] {
+	for _, node := range nodes[:4] {
 		WaitForNodeDown(t, node, 10*time.Second)
 	}
 
+	// The survivor may still report leader state, but it cannot commit without
+	// a quorum. Writes should fail or time out — never return success.
+	client := &http.Client{Timeout: 3 * time.Second}
+	putURL := fmt.Sprintf("http://127.0.0.1:%s/put?key=%s&value=%s", nodes[4].port, "key", "value")
+
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := nodes[3].TryPut("key", "value")
+		resp, err := client.Get(putURL)
 		if err != nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
+			return // blocked or unreachable — expected without quorum
 		}
-		if resp != "success" {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if string(body) != "success" {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)

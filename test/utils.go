@@ -11,10 +11,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
 // Prevent integration tests from hanging until go test's default timeout.
@@ -47,22 +48,6 @@ func buildBinary(t *testing.T) {
 	})
 }
 
-func KillPorts(n int) {
-	for i := 0; i < n; i++ {
-		for _, port := range []int{8001 + i, 9001 + i} {
-			out, err := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
-			if err != nil {
-				continue
-			}
-			pids := strings.Fields(string(out))
-			for _, pid := range pids {
-				_ = exec.Command("kill", "-9", pid).Run()
-			}
-		}
-	}
-	time.Sleep(200 * time.Millisecond)
-}
-
 type Node struct {
 	id      string
 	port    string
@@ -72,28 +57,13 @@ type Node struct {
 }
 
 type Status struct {
-	Id          string         `json:"id"`
-	LeaderId    *string        `json:"leaderId"`
-	State       int            `json:"state"`
-	Term        int64          `json:"term"`
-	CommitIndex int64          `json:"commitIndex"`
-	LastApplied int64          `json:"lastApplied"`
-	LogLength   int            `json:"logLength"`
-	MatchIndex  map[string]int64 `json:"matchIndex"`
-	NextIndex   map[string]int64 `json:"nextIndex"`
-}
-
-func (n *Node) Status(t *testing.T) *Status {
-	status, err := n.TryStatus()
-	if err != nil {
-		t.Fatalf("HTTP request failed for %s: %v", n.id, err)
-	}
-	return status
+	State       int   `json:"state"`
+	Term        int64 `json:"term"`
+	LastApplied int64 `json:"lastApplied"`
 }
 
 func (n *Node) TryStatus() (*Status, error) {
-	statusURL := fmt.Sprintf("http://127.0.0.1:%s/status", n.port)
-	resp, err := testHTTPClient.Get(statusURL)
+	resp, err := testHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%s/status", n.port))
 	if err != nil {
 		return nil, err
 	}
@@ -115,50 +85,25 @@ func (n *Node) Get(t *testing.T, key string) string {
 }
 
 func (n *Node) TryGet(key string) (string, error) {
-	baseURL := fmt.Sprintf("http://127.0.0.1:%s/get", n.port)
-	params := url.Values{}
-	params.Add("key", key)
-	fullURL := baseURL + "?" + params.Encode()
-
-	resp, err := testHTTPClient.Get(fullURL)
+	params := url.Values{"key": {key}}
+	resp, err := testHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%s/get?%s", n.port, params.Encode()))
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-
 	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
+	return string(body), err
 }
 
-func (n *Node) Put(t *testing.T, key string, value string) string {
-	body, err := n.TryPut(key, value)
-	if err != nil {
-		t.Fatalf("HTTP request failed for %s: %v", n.id, err)
-	}
-	return body
-}
-
-func (n *Node) TryPut(key string, value string) (string, error) {
-	baseURL := fmt.Sprintf("http://127.0.0.1:%s/put", n.port)
-	params := url.Values{}
-	params.Add("key", key)
-	params.Add("value", value)
-	fullURL := baseURL + "?" + params.Encode()
-
-	resp, err := testHTTPClient.Get(fullURL)
+func (n *Node) TryPut(key, value string) (string, error) {
+	params := url.Values{"key": {key}, "value": {value}}
+	resp, err := testHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%s/put?%s", n.port, params.Encode()))
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-
 	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
+	return string(body), err
 }
 
 func (n *Node) PutMustSucceed(t *testing.T, key, value string) {
@@ -175,7 +120,7 @@ func (n *Node) PutMustSucceed(t *testing.T, key, value string) {
 		if resp == "success" {
 			return
 		}
-		if isTransientPutError(resp) {
+		if harness.IsTransientError(resp) {
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
@@ -184,35 +129,15 @@ func (n *Node) PutMustSucceed(t *testing.T, key, value string) {
 	t.Fatalf("%s put %s=%s timed out, last response: %q", n.id, key, value, last)
 }
 
-func isTransientPutError(resp string) bool {
-	switch resp {
-	case "", "Error: election", "no leader elected yet", "leader not accessible":
-		return true
-	default:
-		return strings.HasPrefix(resp, "Error:")
-	}
-}
-
 func NewNodes(n int) []*Node {
-	var nodes []*Node
-	peers := ""
+	peers := harness.BuildPeers(n)
+	nodes := make([]*Node, n)
 	for i := 0; i < n; i++ {
-		id := "node" + strconv.Itoa(i+1)
-		addr := "127.0.0.1:" + strconv.Itoa(9001+i)
-		peers += id + "=" + addr
-		if i != n-1 {
-			peers += ","
+		nodes[i] = &Node{
+			id:    fmt.Sprintf("node%d", i+1),
+			port:  strconv.Itoa(8001 + i),
+			peers: peers,
 		}
-	}
-
-	for i := 0; i < n; i++ {
-		node := &Node{
-			id:      "node" + strconv.Itoa(i+1),
-			port:    strconv.Itoa(8001 + i),
-			peers:   peers,
-			running: false,
-		}
-		nodes = append(nodes, node)
 	}
 	return nodes
 }
@@ -257,7 +182,7 @@ func StopNodes(nodes []*Node) {
 
 func InitNodes(t *testing.T) []*Node {
 	t.Helper()
-	KillPorts(N)
+	harness.KillPorts(N)
 	nodes := NewNodes(N)
 	t.Cleanup(func() { StopNodes(nodes) })
 	StartNodes(t, nodes, "true")

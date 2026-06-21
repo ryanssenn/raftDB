@@ -89,7 +89,7 @@ func (s *server) AppendEntries(ctx context.Context, req *pb.AppendRequest) (*pb.
 
 	if req.Term > term {
 		s.node.Term.Store(req.Term)
-		s.node.Logger.WriteTerm(s.node.Term.Load())
+		s.node.Logger.WriteMeta(s.node.Term.Load(), s.node.voteFor())
 		s.node.State = Follower
 	}
 
@@ -115,7 +115,6 @@ func (s *server) AppendEntries(ctx context.Context, req *pb.AppendRequest) (*pb.
 
 	if req.LeaderCommit > s.node.CommitIndex.Load() {
 		s.node.CommitIndex.Store(min(req.LeaderCommit, int64(s.node.GetLogSize()-1)))
-		log.Printf("%s has updated commit index to %d", s.node.Id, req.LeaderCommit)
 		s.node.ApplyCommitted()
 	}
 
@@ -130,8 +129,7 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 		s.node.State = Follower
 		s.node.Term.Store(req.Term)
 		storeString(&s.node.VoteFor, "")
-		s.node.Logger.WriteTerm(s.node.Term.Load())
-		s.node.Logger.WriteVotedFor(s.node.voteFor())
+		s.node.Logger.WriteMeta(s.node.Term.Load(), "")
 	}
 
 	resp := pb.VoteResponse{Term: s.node.Term.Load(), VoteGranted: false}
@@ -150,7 +148,7 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 
 	resp.VoteGranted = true
 	storeString(&s.node.VoteFor, req.CandidateId)
-	s.node.Logger.WriteVotedFor(req.CandidateId)
+	s.node.Logger.WriteMeta(s.node.Term.Load(), req.CandidateId)
 	s.node.ReceiveHeartbeat()
 	s.node.recordEvent(Event{
 		Type:   "request_vote",
@@ -159,7 +157,6 @@ func (s *server) RequestVote(ctx context.Context, req *pb.VoteRequest) (*pb.Vote
 		Term:   s.node.Term.Load(),
 		Detail: "granted",
 	})
-	log.Printf("%s has granted vote to %s in term %d", s.node.Id, req.CandidateId, s.node.Term.Load())
 	return &resp, nil
 }
 

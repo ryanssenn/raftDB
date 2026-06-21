@@ -48,7 +48,7 @@ func newLogger(id string) *Logger {
 	logs, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 
 	if err != nil {
-		log.Fatalf("wow1 %s %s", id, err)
+		log.Fatalf("%s open log: %v", id, err)
 	}
 
 	path = "logs/" + id + ".meta"
@@ -78,51 +78,23 @@ func (l *Logger) ClearData() {
 	l.metaFile.Seek(0, io.SeekStart)
 }
 
-func (l *Logger) WriteTerm(term int64) {
+func (l *Logger) WriteMeta(term int64, votedFor string) {
 	l.metaMu.Lock()
 	defer l.metaMu.Unlock()
 
 	l.metaFile.Seek(0, io.SeekStart)
 
-	var metaData MetaData
-	decoder := json.NewDecoder(l.metaFile)
-	err := decoder.Decode(&metaData)
-
-	if err != nil {
-		if err != io.EOF {
-			log.Fatalf("%s %s", l.Id, err)
-		}
-		metaData = MetaData{}
+	var meta MetaData
+	if err := json.NewDecoder(l.metaFile).Decode(&meta); err != nil && err != io.EOF {
+		log.Fatalf("%s read meta: %v", l.Id, err)
 	}
 
-	metaData.Term = term
+	meta.Term = term
+	meta.VotedFor = votedFor
 
 	l.metaFile.Truncate(0)
 	l.metaFile.Seek(0, io.SeekStart)
-	json.NewEncoder(l.metaFile).Encode(metaData)
-}
-
-func (l *Logger) WriteVotedFor(votedFor string) {
-	l.metaMu.Lock()
-	defer l.metaMu.Unlock()
-	l.metaFile.Seek(0, io.SeekStart)
-
-	var metaData MetaData
-	decoder := json.NewDecoder(l.metaFile)
-	err := decoder.Decode(&metaData)
-
-	if err != nil {
-		if err != io.EOF {
-			log.Fatalf("%s %s", l.Id, err)
-		}
-		metaData = MetaData{}
-	}
-
-	metaData.VotedFor = votedFor
-
-	l.metaFile.Truncate(0)
-	l.metaFile.Seek(0, io.SeekStart)
-	json.NewEncoder(l.metaFile).Encode(metaData)
+	json.NewEncoder(l.metaFile).Encode(meta)
 }
 
 func (l *Logger) AppendLog(entry *LogEntry) {

@@ -50,7 +50,6 @@ const (
 
 type Node struct {
 	Id      string
-	Port    string
 	Peers   map[string]string
 	Clients map[string]pb.NodeClient
 	State   NodeState
@@ -74,10 +73,9 @@ type Node struct {
 	Events             *EventLog
 }
 
-func NewNode(id, port string, peers map[string]string) *Node {
+func NewNode(id string, peers map[string]string) *Node {
 	n := &Node{
 		Id:                 id,
-		Port:               port,
 		Peers:              peers,
 		Clients:            make(map[string]pb.NodeClient),
 		State:              Follower,
@@ -148,19 +146,13 @@ func (n *Node) HandleCommand(cmd *Command) string {
 	return "unknown command"
 }
 
-// Used by followers to update/write entries from leader
-func (n *Node) AppendLogs(PrevLogIndex int64, entries []*LogEntry) {
+func (n *Node) AppendLogs(prevLogIndex int64, entries []*LogEntry) {
 	n.LogMu.Lock()
 	defer n.LogMu.Unlock()
 
-	// in memory
-	n.Log = n.Log[:PrevLogIndex+1]
+	n.Log = n.Log[:prevLogIndex+1]
 	n.Log = append(n.Log, entries...)
-
-	//persistent
-	n.Logger.AppendLogs(entries, PrevLogIndex+1)
-
-	log.Printf("%s has appended %d new log", n.Id, len(entries))
+	n.Logger.AppendLogs(entries, prevLogIndex+1)
 }
 
 func (n *Node) ApplyCommitted() {
@@ -175,7 +167,6 @@ func (n *Node) ApplyCommitted() {
 	n.ApplyCond.Broadcast()
 }
 
-// Provide linearizable reads
 func (n *Node) Get(key string) string {
 	readIndex := n.CommitIndex.Load()
 
@@ -216,7 +207,11 @@ func (n *Node) ForwardToLeader(command *Command) string {
 		return "no leader elected yet"
 	}
 
-	log.Printf("%s has forwarded command to leader %s", n.Id, n.leaderID())
+	client, ok := n.Clients[n.leaderID()]
+	if !ok || client == nil {
+		return "leader not accessible"
+	}
+
 	n.recordEvent(Event{
 		Type: "forward_command",
 		From: n.Id,
@@ -227,7 +222,7 @@ func (n *Node) ForwardToLeader(command *Command) string {
 	})
 	ctx, cancel := contextWithRPCTimeout()
 	defer cancel()
-	response, err := n.Clients[n.leaderID()].ForwardToLeader(
+	response, err := client.ForwardToLeader(
 		ctx,
 		&pb.Command{Command: serializedCommand},
 	)
@@ -266,8 +261,7 @@ func (n *Node) StartElectionTimer() {
 func (n *Node) StartElection() {
 	storeString(&n.VoteFor, n.Id)
 	n.Term.Add(1)
-	n.Logger.WriteTerm(n.Term.Load())
-	n.Logger.WriteVotedFor(n.voteFor())
+	n.Logger.WriteMeta(n.Term.Load(), n.voteFor())
 	n.State = Candidate
 	n.recordEvent(Event{
 		Type:   "state_change",

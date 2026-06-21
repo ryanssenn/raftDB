@@ -2,4 +2,6 @@ changes.txt
 logs/
 .vscode/
 ryanDB
+benchmarks/results/*.csv
+benchmarks/results/*.json
 benchmarks/results/node-logs/

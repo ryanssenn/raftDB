@@ -10,18 +10,15 @@ import (
 	pb "github.com/ryansenn/ryanDB/proto/nodepb"
 )
 
-// Used by leader to append a command from client
 func (n *Node) AppendLog(cmd *Command) int {
 	entry := NewLogEntry(n.Term.Load(), cmd)
 	n.LogMu.Lock()
 	defer n.LogMu.Unlock()
 	n.Logger.AppendLog(entry)
 	n.Log = append(n.Log, entry)
-	log.Printf("%s has appended 1 new log", n.Id)
 	return len(n.Log) - 1
 }
 
-// Used by leader to append a command and block until committed and applied
 func (n *Node) Commit(cmd *Command) {
 	index := int64(n.AppendLog(cmd))
 	n.CommitCond.L.Lock()
@@ -162,7 +159,6 @@ func (n *Node) UpdateCommitIndex() {
 			n.CommitCond.L.Lock()
 			n.CommitIndex.Store(i)
 			n.CommitCond.L.Unlock()
-			log.Printf("%s has updated commit index to %d", n.Id, i)
 			n.recordEvent(Event{
 				Type:   "commit",
 				From:   n.Id,

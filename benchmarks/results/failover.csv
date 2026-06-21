@@ -1,4 +1,0 @@
-trial,old_leader,new_leader,recovery_ms,probe_node
-1,node3,node2,386.1,node1
-2,node2,node3,345.6,node1
-3,node3,node2,338.8,node1

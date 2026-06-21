@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/ryansenn/ryanDB/core"
 )
 
 // Client requests must not hang forever when the leader is dead mid-commit.
@@ -16,8 +18,8 @@ var visualizerHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
 type NodeStatus struct {
 	ID          string           `json:"id"`
-	Running     bool             `json:"running"`
-	Reachable   bool             `json:"reachable"`
+	Running     bool             `json:"running,omitempty"`
+	Reachable   bool             `json:"reachable,omitempty"`
 	State       int              `json:"state,omitempty"`
 	Term        int64            `json:"term,omitempty"`
 	LeaderId    string           `json:"leaderId,omitempty"`
@@ -52,53 +54,15 @@ func fetchStatus(port string) (*NodeStatus, error) {
 	}
 	defer resp.Body.Close()
 
-	var raw map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	var s NodeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 		return nil, err
 	}
-
-	s := &NodeStatus{Reachable: true}
-	if v, ok := raw["id"].(string); ok {
-		s.ID = v
-	}
-	if v, ok := raw["state"].(float64); ok {
-		s.State = int(v)
-	}
-	if v, ok := raw["term"].(float64); ok {
-		s.Term = int64(v)
-	}
-	if v, ok := raw["leaderId"].(string); ok {
-		s.LeaderId = v
-	}
-	if v, ok := raw["commitIndex"].(float64); ok {
-		s.CommitIndex = int64(v)
-	}
-	if v, ok := raw["lastApplied"].(float64); ok {
-		s.LastApplied = int64(v)
-	}
-	if v, ok := raw["logLength"].(float64); ok {
-		s.LogLength = int(v)
-	}
-	if v, ok := raw["matchIndex"].(map[string]any); ok {
-		s.MatchIndex = toInt64Map(v)
-	}
-	if v, ok := raw["nextIndex"].(map[string]any); ok {
-		s.NextIndex = toInt64Map(v)
-	}
-	return s, nil
+	s.Reachable = true
+	return &s, nil
 }
 
-func toInt64Map(m map[string]any) map[string]int64 {
-	out := map[string]int64{}
-	for k, v := range m {
-		if f, ok := v.(float64); ok {
-			out[k] = int64(f)
-		}
-	}
-	return out
-}
-
-func fetchEvents(port string, since int64) ([]Event, int64, error) {
+func fetchEvents(port string, since int64) ([]core.Event, int64, error) {
 	resp, err := visualizerHTTPClient.Get(fmt.Sprintf("http://localhost:%s/events?since=%d", port, since))
 	if err != nil {
 		return nil, since, err
@@ -106,8 +70,8 @@ func fetchEvents(port string, since int64) ([]Event, int64, error) {
 	defer resp.Body.Close()
 
 	var body struct {
-		Events    []Event `json:"events"`
-		LatestSeq int64   `json:"latestSeq"`
+		Events    []core.Event `json:"events"`
+		LatestSeq int64        `json:"latestSeq"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, since, err
@@ -115,18 +79,7 @@ func fetchEvents(port string, since int64) ([]Event, int64, error) {
 	return body.Events, body.LatestSeq, nil
 }
 
-type Event struct {
-	Seq     int64  `json:"seq"`
-	Ts      int64  `json:"ts"`
-	Type    string `json:"type"`
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Term    int64  `json:"term,omitempty"`
-	Entries int    `json:"entries,omitempty"`
-	Op      string `json:"op,omitempty"`
-	Key     string `json:"key,omitempty"`
-	Detail  string `json:"detail,omitempty"`
-}
+type Event = core.Event
 
 func doPut(port, key, value string) (string, error) {
 	params := url.Values{}
@@ -184,14 +137,6 @@ func (srv *Server) handleScenario(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (srv *Server) handleScenarioLog(w http.ResponseWriter, r *http.Request) {
-	srv.mu.RLock()
-	defer srv.mu.RUnlock()
-	json.NewEncoder(w).Encode(map[string]any{
-		"lines": srv.scenarioLog,
-	})
-}
-
 func (srv *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	srv.mu.RLock()
 	cluster := srv.cluster
@@ -247,7 +192,6 @@ func (srv *Server) handleClusterEvents(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) registerRoutes(mux *http.ServeMux, static http.Handler) {
 	mux.Handle("/", static)
 	mux.HandleFunc("/api/scenario", srv.handleScenario)
-	mux.HandleFunc("/api/scenario/log", srv.handleScenarioLog)
 	mux.HandleFunc("/api/cluster/status", srv.handleClusterStatus)
 	mux.HandleFunc("/api/cluster/events", srv.handleClusterEvents)
 }

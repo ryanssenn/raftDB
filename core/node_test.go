@@ -24,7 +24,7 @@ func testNode(t *testing.T, id string) *Node {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	n := NewNode(id, "8001", testPeers())
+	n := NewNode(id, testPeers())
 	n.Logger.ClearData()
 	return n
 }
@@ -206,7 +206,7 @@ func TestRecoverStateAppliesLog(t *testing.T) {
 	n := testNode(t, "node1")
 	n.Logger.AppendLog(NewLogEntry(1, NewCommand("put", "k", "v")))
 
-	fresh := NewNode("node1", "8001", testPeers())
+	fresh := NewNode("node1", testPeers())
 	fresh.Logger = n.Logger
 	fresh.RecoverState()
 
@@ -221,8 +221,7 @@ func TestLoggerRoundTrip(t *testing.T) {
 
 	logger := newLogger("unit-node")
 	logger.ClearData()
-	logger.WriteTerm(3)
-	logger.WriteVotedFor("node2")
+	logger.WriteMeta(3, "node2")
 
 	entries := []*LogEntry{
 		NewLogEntry(1, NewCommand("put", "a", "1")),

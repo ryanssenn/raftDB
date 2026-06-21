@@ -21,7 +21,7 @@ func get(w http.ResponseWriter, r *http.Request) {
 	cmd := core.NewCommand("get", key, "")
 	node.Events.Record(core.Event{
 		Type: "client_request",
-		From: "visualizer",
+		From: "client",
 		To:   node.Id,
 		Op:   "get",
 		Key:  key,
@@ -36,7 +36,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	cmd := core.NewCommand("put", key, value)
 	node.Events.Record(core.Event{
 		Type: "client_request",
-		From: "visualizer",
+		From: "client",
 		To:   node.Id,
 		Op:   "put",
 		Key:  key,
@@ -103,7 +103,7 @@ func main() {
 		return
 	}
 
-	node = core.NewNode(*id, *port, parsePeers(*peersStr))
+	node = core.NewNode(*id, parsePeers(*peersStr))
 
 	if *reset {
 		node.Logger.ClearData()

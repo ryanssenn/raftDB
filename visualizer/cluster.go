@@ -5,8 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
 type ClusterNode struct {
@@ -21,37 +22,13 @@ type Cluster struct {
 	Nodes []*ClusterNode
 }
 
-func KillPorts(n int) {
-	for i := 0; i < n; i++ {
-		for _, port := range []int{8001 + i, 9001 + i} {
-			out, err := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
-			if err != nil {
-				continue
-			}
-			for _, pid := range strings.Fields(string(out)) {
-				_ = exec.Command("kill", "-9", pid).Run()
-			}
-		}
-	}
-}
-
-func buildPeers(n int) string {
-	parts := make([]string, n)
-	for i := 0; i < n; i++ {
-		id := "node" + strconv.Itoa(i+1)
-		addr := "localhost:" + strconv.Itoa(9001+i)
-		parts[i] = id + "=" + addr
-	}
-	return strings.Join(parts, ",")
-}
-
 func NewCluster(n int) *Cluster {
-	peers := buildPeers(n)
+	peers := harness.BuildPeers(n)
 	nodes := make([]*ClusterNode, n)
 	for i := 0; i < n; i++ {
 		nodes[i] = &ClusterNode{
-			ID:   "node" + strconv.Itoa(i+1),
-			Port: strconv.Itoa(8001 + i),
+			ID:    "node" + strconv.Itoa(i+1),
+			Port:  strconv.Itoa(8001 + i),
 			Peers: peers,
 		}
 	}
@@ -196,5 +173,10 @@ func findRepoRoot() string {
 }
 
 func openBrowser(url string) {
-	exec.Command("open", url).Start()
+	for _, cmd := range []string{"xdg-open", "open"} {
+		if path, err := exec.LookPath(cmd); err == nil {
+			_ = exec.Command(path, url).Start()
+			return
+		}
+	}
 }

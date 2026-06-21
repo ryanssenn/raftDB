@@ -20,14 +20,12 @@ type GetStep struct {
 }
 
 type Step struct {
-	Wait      string    `json:"wait,omitempty"`
-	Comment   string    `json:"comment,omitempty"`
-	Kill      string    `json:"kill,omitempty"`
-	Restart   string    `json:"restart,omitempty"`
-	Partition []string  `json:"partition,omitempty"`
-	Heal      []string  `json:"heal,omitempty"`
-	Put       *PutStep  `json:"put,omitempty"`
-	Get       *GetStep  `json:"get,omitempty"`
+	Wait    string   `json:"wait,omitempty"`
+	Comment string   `json:"comment,omitempty"`
+	Kill    string   `json:"kill,omitempty"`
+	Restart string   `json:"restart,omitempty"`
+	Put     *PutStep `json:"put,omitempty"`
+	Get     *GetStep `json:"get,omitempty"`
 }
 
 type Scenario struct {
@@ -88,12 +86,6 @@ func validateStep(s Step, nodeCount int) error {
 	if s.Get != nil {
 		kinds++
 	}
-	if len(s.Partition) > 0 {
-		kinds++
-	}
-	if len(s.Heal) > 0 {
-		kinds++
-	}
 	if kinds != 1 {
 		return fmt.Errorf("each step must have exactly one action")
 	}
@@ -118,16 +110,6 @@ func validateStep(s Step, nodeCount int) error {
 	}
 	if s.Get != nil {
 		if err := checkNodeID(s.Get.Node, nodeCount); err != nil {
-			return err
-		}
-	}
-	for _, id := range s.Partition {
-		if err := checkNodeID(id, nodeCount); err != nil {
-			return err
-		}
-	}
-	for _, id := range s.Heal {
-		if err := checkNodeID(id, nodeCount); err != nil {
 			return err
 		}
 	}
@@ -164,23 +146,9 @@ func (s *Step) Description() string {
 		return fmt.Sprintf("put %s=%s → %s", s.Put.Key, s.Put.Value, s.Put.Node)
 	case s.Get != nil:
 		return fmt.Sprintf("get %s from %s", s.Get.Key, s.Get.Node)
-	case len(s.Partition) > 0:
-		if s.Comment != "" {
-			return "partition " + fmt.Sprintf("%v", s.Partition) + " — " + s.Comment
-		}
-		return "partition " + fmt.Sprintf("%v", s.Partition)
-	case len(s.Heal) > 0:
-		if s.Comment != "" {
-			return "heal " + fmt.Sprintf("%v", s.Heal) + " — " + s.Comment
-		}
-		return "heal " + fmt.Sprintf("%v", s.Heal)
-default:
+	default:
 		return "unknown step"
 	}
-}
-
-func parseDuration(s string) (time.Duration, error) {
-	return time.ParseDuration(s)
 }
 
 func (srv *Server) runScenario() {
@@ -282,7 +250,7 @@ func (srv *Server) continueOnClientError(err error, msg string) error {
 func (srv *Server) executeStep(step Step) error {
 	switch {
 	case step.Wait != "":
-		d, err := parseDuration(step.Wait)
+		d, err := time.ParseDuration(step.Wait)
 		if err != nil {
 			return err
 		}
@@ -374,31 +342,7 @@ func (srv *Server) executeStep(step Step) error {
 		}
 		return nil
 
-	case len(step.Partition) > 0:
-		srv.appendLog("partition — stopping " + fmt.Sprintf("%v", step.Partition))
-		for _, id := range step.Partition {
-			node := srv.cluster.NodeByID(id)
-			if node == nil {
-				return fmt.Errorf("node %s not found", id)
-			}
-			node.Stop()
-		}
-		return nil
-
-	case len(step.Heal) > 0:
-		srv.appendLog("heal — restarting " + fmt.Sprintf("%v", step.Heal))
-		for _, id := range step.Heal {
-			node := srv.cluster.NodeByID(id)
-			if node == nil {
-				return fmt.Errorf("node %s not found", id)
-			}
-			if err := node.Restart(srv.binaryPath); err != nil {
-				return err
-			}
-		}
-		return nil
-
-default:
+	default:
 		return fmt.Errorf("empty step")
 	}
 }

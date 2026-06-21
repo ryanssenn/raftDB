@@ -31,6 +31,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,10 +71,9 @@ func doGet(port int, key string) (string, error) {
 }
 
 type status struct {
-	Id       string  `json:"id"`
-	State    int     `json:"state"` // 0=follower, 1=candidate, 2=leader
-	Term     int64   `json:"term"`
-	LeaderId *string `json:"leaderId"`
+	Id    string `json:"id"`
+	State int    `json:"state"` // 0=follower, 1=candidate, 2=leader
+	Term  int64  `json:"term"`
 }
 
 func getStatus(port int) (*status, error) {
@@ -94,7 +95,6 @@ func getStatus(port int) (*status, error) {
 type proc struct {
 	id       string
 	httpPort int
-	grpcPort int
 	cmd      *exec.Cmd
 	running  bool
 }
@@ -108,37 +108,14 @@ type cluster struct {
 }
 
 func newCluster(size int, binary, logDir string) *cluster {
-	c := &cluster{size: size, binary: binary, logDir: logDir}
-	var peerPairs []string
-	for i := 0; i < size; i++ {
-		grpc := 9001 + i
-		peerPairs = append(peerPairs, fmt.Sprintf("node%d=127.0.0.1:%d", i+1, grpc))
-	}
-	c.peers = strings.Join(peerPairs, ",")
+	c := &cluster{size: size, binary: binary, logDir: logDir, peers: harness.BuildPeers(size)}
 	for i := 0; i < size; i++ {
 		c.procs = append(c.procs, &proc{
 			id:       fmt.Sprintf("node%d", i+1),
 			httpPort: 8001 + i,
-			grpcPort: 9001 + i,
 		})
 	}
 	return c
-}
-
-// killPorts frees the HTTP/gRPC ports that the cluster will use.
-func killPorts(size int) {
-	for i := 0; i < size; i++ {
-		for _, port := range []int{8001 + i, 9001 + i} {
-			out, err := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
-			if err != nil {
-				continue
-			}
-			for _, pid := range strings.Fields(string(out)) {
-				_ = exec.Command("kill", "-9", pid).Run()
-			}
-		}
-	}
-	time.Sleep(300 * time.Millisecond)
 }
 
 func (c *cluster) startProc(p *proc, reset string) error {
@@ -163,7 +140,7 @@ func (c *cluster) startProc(p *proc, reset string) error {
 }
 
 func (c *cluster) start(reset string) error {
-	killPorts(c.size)
+	harness.KillPorts(c.size)
 	for _, p := range c.procs {
 		if err := c.startProc(p, reset); err != nil {
 			return fmt.Errorf("start %s: %w", p.id, err)
@@ -360,8 +337,7 @@ func isErrResp(op, resp string) bool {
 	if op == "put" {
 		return resp != "success"
 	}
-	// get: any "Error:"-prefixed body is a failure; empty body = key miss (still a valid round-trip)
-	return strings.HasPrefix(resp, "Error:") || resp == "no leader elected yet" || resp == "leader not accessible"
+	return resp == "no leader elected yet" || resp == "leader not accessible" || strings.HasPrefix(resp, "Error:")
 }
 
 func round(v float64, places int) float64 {

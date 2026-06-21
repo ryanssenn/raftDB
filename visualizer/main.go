@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
 //go:embed static/*
@@ -21,7 +22,6 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "skip opening browser")
 	binary := flag.String("binary", "", "path to ryanDB binary")
 	demoPace := flag.Bool("demo", true, "compress scenario waits for presentation pacing")
-	showcaseFlag := flag.Bool("showcase", false, "enable 30s keynote showcase mode (exact timing, staged boot)")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
@@ -40,12 +40,12 @@ func main() {
 		log.Fatalf("binary: %v", err)
 	}
 
-	showcaseMode := *showcaseFlag || scenario.Showcase
+	showcaseMode := scenario.Showcase
 	if showcaseMode {
 		*demoPace = false
 	}
 
-	KillPorts(scenario.Nodes)
+	harness.KillPorts(scenario.Nodes)
 	cluster := NewCluster(scenario.Nodes)
 
 	log.Printf("starting %d-node cluster...", scenario.Nodes)
@@ -71,10 +71,6 @@ func main() {
 	}
 	srv.appendLog("cluster started (" + fmt.Sprintf("%d", scenario.Nodes) + " nodes)")
 	srv.appendLog("running scenario: " + scenario.Name)
-
-	if showcaseMode {
-		// scenario starts immediately; first wait step handles boot pacing
-	}
 	go srv.runScenario()
 
 	static, err := fs.Sub(staticFiles, "static")
