@@ -207,6 +207,11 @@ func (n *Node) ForwardToLeader(command *Command) string {
 		return "no leader elected yet"
 	}
 
+	client, ok := n.Clients[n.leaderID()]
+	if !ok || client == nil {
+		return "leader not accessible"
+	}
+
 	n.recordEvent(Event{
 		Type: "forward_command",
 		From: n.Id,
@@ -217,7 +222,7 @@ func (n *Node) ForwardToLeader(command *Command) string {
 	})
 	ctx, cancel := contextWithRPCTimeout()
 	defer cancel()
-	response, err := n.Clients[n.leaderID()].ForwardToLeader(
+	response, err := client.ForwardToLeader(
 		ctx,
 		&pb.Command{Command: serializedCommand},
 	)

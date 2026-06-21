@@ -224,16 +224,29 @@ func TestNoDualLeaders(t *testing.T) {
 func TestWriteWhileNoLeader(t *testing.T) {
 	nodes := InitNodes(t)
 
-	for _, node := range nodes[:3] {
+	// Leave one node alive — not enough for a quorum in a 5-node cluster.
+	for _, node := range nodes[:4] {
 		node.StopNode()
 	}
-	for _, node := range nodes[:3] {
+	for _, node := range nodes[:4] {
 		WaitForNodeDown(t, node, 10*time.Second)
 	}
 
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := nodes[3].TryPut("key", "value")
+		_, leaderCount := CountLeader(t, nodes)
+		if leaderCount == 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, leaderCount := CountLeader(t, nodes); leaderCount != 0 {
+		t.Fatalf("expected no leader with one node up, got %d", leaderCount)
+	}
+
+	deadline = time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := nodes[4].TryPut("key", "value")
 		if err != nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
