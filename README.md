@@ -18,35 +18,27 @@ Or run a scripted tour that drives the cluster for you:
 go run ./visualizer --no-browser visualizer/scenarios/showcase.json
 ```
 
-## What it looks like
+More detail: [docs/playground.md](docs/playground.md)
 
-Five nodes up, one leader elected:
+## Benchmarks
 
-![Cluster running with a leader elected](docs/images/playground-start.png)
+3-node cluster on a single host ([full report](benchmarks/REPORT.md)):
 
-Write `user:1 = alice` from the sidebar. The request goes to a node, gets forwarded if needed, and replicates:
+| Metric | Result |
+|---|---|
+| Read throughput (peak) | ~72,000 ops/sec |
+| Write throughput (64 clients) | ~19,500 ops/sec |
+| Read latency, p99 (16 clients) | ~1.3 ms |
+| Write latency, p99 (16 clients) | ~4 ms |
+| Failover recovery after leader crash | ~327 ms |
 
-![Write replicating to followers](docs/images/playground-write.png)
-
-Kill the leader in **Failure Lab**. The cluster picks a new one:
-
-![Leader killed, new leader elected](docs/images/playground-failover.png)
-
-More screenshots and walkthroughs: [docs/playground.md](docs/playground.md)
-
-## What you can do in the UI
-
-- Start/stop a cluster (3–9 nodes)
-- Send puts and gets from up to 3 clients
-- Kill and restart individual nodes
-- Isolate nodes to simulate a network partition
-- Load guided tours (election, failure, partition, persistence)
+These numbers come from a Cursor Cloud VM with 4 vCPUs, 16 GB RAM, and Go 1.24.0. Re-run with `go run ./benchmarks` on your own machine.
 
 ## The Raft implementation
 
-Leader election, log replication, disk persistence, recovery. Clients talk HTTP; nodes talk gRPC.
+A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf) with a small in-memory key-value store on top.
 
-Not implemented: snapshots, dynamic membership.
+The implementation covers leader election, log replication, disk persistence, and recovery. Clients use HTTP; nodes exchange Raft RPCs over gRPC.
 
 Read the code: [docs/guide.md](docs/guide.md)
 
@@ -58,40 +50,39 @@ go test -v ./test             # 5-node integration tests
 go test ./visualizer/...      # playground API
 ```
 
-What each test covers: [docs/development/testing.md](docs/development/testing.md)
+Integration tests build the binary, launch a 5-node cluster, and drive it over HTTP. What each test covers: [docs/development/testing.md](docs/development/testing.md)
 
-## Benchmarks
+## Running a cluster
 
-3-node cluster, single machine ([full report](benchmarks/REPORT.md)):
-
-| | |
-|---|---|
-| Reads (peak) | ~72k ops/sec |
-| Writes (64 clients) | ~19.5k ops/sec |
-| Read p99 (16 clients) | ~1.3 ms |
-| Write p99 (16 clients) | ~4 ms |
-| Failover after leader crash | ~327 ms |
-
-```bash
-go run ./benchmarks
-```
-
-## Run nodes without the UI
+Each node needs an HTTP port (`--port`) and a gRPC port (in `--peers` as `id=host:port`). Start at least three nodes for a working cluster.
 
 ```bash
 go build -o ryanDB .
 
-./ryanDB --id=node1 --port=8001 \
+./ryanDB \
+  --id=node1 \
+  --port=8001 \
   --peers=node1=127.0.0.1:9001,node2=127.0.0.1:9002,node3=127.0.0.1:9003 \
   --reset=true
 ```
 
-Start node2 and node3 on 8002/8003 with the same peers string. API: `/put?key=&value=`, `/get?key=`, `/status`.
+Start `node2` and `node3` on ports `8002`/`8003` with the same `--peers` string. Use `--reset=false` to keep logs between restarts, or `./launch_node.sh 1 true` to start one node via the helper script.
 
-## Repo layout
+### HTTP API
 
-- `core/` — Raft
-- `visualizer/` — playground UI + control server
-- `test/` — integration tests
-- `benchmarks/` — load tests
-- `docs/` — guides and the screenshots above
+| Endpoint | Description |
+|---|---|
+| `GET /put?key=<key>&value=<value>` | Write a key |
+| `GET /get?key=<key>` | Read a key |
+| `GET /status` | Node id, term, role, and leader |
+
+```bash
+curl "http://localhost:8001/put?key=foo&value=bar"
+curl "http://localhost:8002/get?key=foo"
+curl "http://localhost:8001/status"
+```
+
+## Not yet implemented
+
+- Log compaction / snapshots
+- Dynamic cluster membership
