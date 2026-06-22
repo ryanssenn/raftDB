@@ -60,6 +60,8 @@ go test -v ./test
 
 | Path | Purpose |
 |---|---|
+| `docs/guide.md` | Beginner's guide to Raft and this codebase |
+| `docs/performance.md` | Performance improvement opportunities |
 | `core/` | Raft logic |
 | `main.go` | HTTP server entrypoint |
 | `test/` | Integration tests |

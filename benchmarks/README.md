@@ -45,8 +45,8 @@ PNGs are written to `benchmarks/results/img/`.
 
 ## Outputs
 
-- `results/results.csv` — one row per load point (throughput + latency percentiles)
-- `results/failover.csv` — leader-crash recovery times
-- `results/results.json` — everything, machine-readable
-- `results/img/*.png` — graphs
-- `results/node-logs/` — per-node stdout/stderr (gitignored)
+- `results/results.csv`: one row per load point (throughput + latency percentiles)
+- `results/failover.csv`: leader-crash recovery times
+- `results/results.json`: everything, machine-readable
+- `results/img/*.png`: graphs
+- `results/node-logs/`: per-node stdout/stderr (gitignored)

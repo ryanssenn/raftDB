@@ -1,6 +1,6 @@
 # RaftDB Visualizer
 
-A scripted demo tool that starts a Raft cluster, runs a JSON scenario, and animates what happens in the browser. You pass a scenario file — the visualizer executes it and you watch the cluster react.
+A scripted demo tool that starts a Raft cluster, runs a JSON scenario, and animates what happens in the browser. You pass a scenario file: the visualizer executes it and you watch the cluster react.
 
 ## Quick start
 
@@ -61,12 +61,12 @@ go run ./visualizer --port 3000 --no-browser visualizer/scenarios/demo.json
 
 ## What you see in the UI
 
-The browser view is passive — you watch, you do not interact.
+The browser view is passive: you watch, you do not interact.
 
 **Diagram (hub layout)**
 - Four followers across the top, **leader in the center** (larger card, green border), **client below**
 - Visible leader↔follower links; each machine has its own log strip
-- Labeled packets: `write`, `replicate`, `ack`, `vote` — smooth, readable pacing
+- Labeled packets: `write`, `replicate`, `ack`, `vote`: smooth, readable pacing
 - Commit fills the committed zone on every node; failures show dashed offline cards
 
 **HUD**
@@ -74,10 +74,10 @@ The browser view is passive — you watch, you do not interact.
 - Showcase mode: scene card + 30s timeline bar (no step counter)
 
 **Event types shown**
-- Client request (blue) — visualizer sends put/get to a node
-- Forward (teal) — follower forwards to leader
-- Replicate (purple) — leader append entries to followers
-- Vote (orange) — election request or vote granted
+- Client request (blue): visualizer sends put/get to a node
+- Forward (teal): follower forwards to leader
+- Replicate (purple): leader append entries to followers
+- Vote (orange): election request or vote granted
 
 ## Scenario file format
 
@@ -97,7 +97,7 @@ Scenarios are JSON files with three top-level fields:
 | `nodes` | Cluster size (3–9) |
 | `steps` | Ordered list of actions |
 
-Each step must have **exactly one** action. Use `"wait"` steps between actions to control pacing — longer waits (e.g. `"5s"`) make animations easier to follow.
+Each step must have **exactly one** action. Use `"wait"` steps between actions to control pacing: longer waits (e.g. `"5s"`) make animations easier to follow.
 
 ### Step types
 
@@ -151,7 +151,7 @@ Set `"loop": true` on a scenario to restart automatically when it finishes.
 
 | File | What it demonstrates |
 |------|----------------------|
-| `scenarios/showcase.json` | **60-second loop** — boot, writes, leader failure, replacement, recovery |
+| `scenarios/showcase.json` | **60-second loop**: boot, writes, leader failure, replacement, recovery |
 | `scenarios/demo.json` | Full demo (~2 min): writes, leader kill, restarts, catch-up |
 
 ## How it works

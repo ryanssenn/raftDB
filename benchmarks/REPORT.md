@@ -1,51 +1,33 @@
 # RaftDB Benchmark Report
 
-A performance characterization of **RaftDB**, the educational Raft-based,
-replicated in-memory key-value store in this repository. The goal is to pick the
-benchmarking metrics that actually matter for a Raft KV store, measure them
-against a live cluster, and present the results with graphs.
+Performance measurements for RaftDB, the replicated in-memory key-value store in this repository. This report describes which metrics were chosen, how they were measured, and the results from a single-host test run.
 
-> Reproduce everything with `go run ./benchmarks` followed by
-> `python3 benchmarks/plot.py`. See [`README.md`](README.md).
+Reproduce the run with `go run ./benchmarks` followed by `python3 benchmarks/plot.py`. See [`README.md`](README.md) for options.
 
 ---
 
-## 1. Which metrics matter (and why)
+## 1. Metrics and methodology
 
-Distributed-database benchmarking has well-established conventions (YCSB, the
-etcd performance guide, and tail-latency best practice). The headline metrics
-are **throughput** and **latency percentiles**, plus **availability** for
-replicated systems. Below is each candidate metric and whether it is meaningful
-*for this specific system*.
+For a Raft-backed store, throughput and latency percentiles are the primary capacity metrics. Availability after leader failure matters for replicated systems. The table below lists each metric considered and whether it applies to RaftDB.
 
-| Metric | Useful here? | Why |
+| Metric | Included | Rationale |
 |---|---|---|
-| **Throughput (ops/sec)** | ✅ Core | The standard capacity metric. RaftDB has two very different paths — writes go through consensus, reads are served from the leader's in-memory map — so we measure each separately. |
-| **Latency percentiles (p50/p95/p99)** | ✅ Core | Averages hide tails. Percentiles are computed from raw per-request samples (never averaged), per YCSB/tail-latency guidance. |
-| **Write vs read asymmetry** | ✅ Core | Writes pay the Raft commit cost (replication RTT + disk persistence); reads do not. This is *the* defining performance trait of a Raft KV store. |
-| **Concurrency / load scaling** | ✅ Core | Shows how throughput grows and how latency degrades (queuing) as concurrent clients increase. |
-| **Availability — failover recovery time** | ✅ Core | For a consensus system the key resilience metric: how long writes are unavailable after the leader crashes. |
-| **Request routing overhead (leader vs follower)** | ✅ RaftDB-specific | Followers forward writes to the leader over gRPC. We quantify that extra hop. |
-| **Cluster-size impact (3 vs 5 nodes)** | ✅ Relevant | More followers = more replication fan-out but a larger quorum. Shows the cost/benefit of replication factor. |
-| Disk fsync isolation | ⚠️ Partial | RaftDB persists each entry to `.rlog`/`.meta`, so fsync is *included* in write latency, but we don't isolate it. The ~11 ms floor at concurrency 1 is consistent with per-entry disk persistence. |
-| Scan / range-query throughput | ❌ N/A | No scan API. |
-| Consistency/staleness measurement | ❌ Out of scope | Correctness is already covered by the integration suite (`test/`). This report is about performance. |
+| Throughput (ops/sec) | Yes | Writes and reads follow different paths (consensus vs in-memory lookup on the leader), so each is measured separately. |
+| Latency percentiles (p50/p95/p99) | Yes | Percentiles are computed from the full set of per-request samples in each run window, not from averaged buckets. |
+| Write vs read asymmetry | Yes | Writes incur replication and persistence; reads on the leader do not. |
+| Concurrency scaling | Yes | Shows how throughput and latency change as concurrent clients increase. |
+| Failover recovery time | Yes | Time from leader failure until writes succeed again. |
+| Leader vs follower routing | Yes | Followers forward writes to the leader over gRPC; this measures any added cost. |
+| Cluster size (3 vs 5 nodes) | Yes | Compares replication fan-out and quorum size at a fixed load. |
+| Disk fsync isolation | Partial | Fsync is included in write latency but not measured in isolation. The ~11 ms floor at concurrency 1 is consistent with per-entry disk persistence. |
+| Scan / range queries | No | No scan API. |
+| Consistency / staleness | No | Correctness is covered by the integration test suite (`test/`). |
 
-**Methodology notes**
+**Load generation.** The harness uses closed-loop load: each of *N* worker goroutines sends one request, waits for the response, and repeats for a fixed duration. Throughput is completed operations divided by wall time; latency is the round-trip time per request. Closed-loop load tends to under-report tail latency compared with open-loop generators when the server slows down (see [Limitations](#6-limitations)).
 
-- **Closed-loop** load: each of *N* worker goroutines issues one request, waits
-  for the response, repeats, for a fixed time window. Throughput = completed
-  ops / wall time; latency = per-request round trip. (Closed-loop under-reports
-  tails vs an open-loop model — see [Limitations](#6-limitations).)
-- Percentiles are interpolated from the **sorted raw sample set** of every
-  successful request in the window.
-- Each point runs for **5 s** after a warm cluster + (for reads) a 2,000-key preload.
-- HTTP keep-alive is on with a large connection pool, so we measure the store,
-  not connection churn.
+**Other settings.** Each data point uses a 5 s measurement window after cluster warmup. Read benchmarks preload 2,000 keys. HTTP keep-alive and a large connection pool are enabled so results reflect store behavior rather than connection setup.
 
-**Environment:** single host (the Cursor Cloud VM), all nodes as local
-processes, Go 1.24.0. Absolute numbers are host-specific; the *shapes* and
-*ratios* are the takeaways.
+**Environment.** Single host (Cursor Cloud VM, 4 vCPUs, 16 GB RAM), all nodes as local processes, Go 1.24.0. Absolute numbers depend on the host; relative comparisons and order-of-magnitude gaps are the main portable results.
 
 ---
 
@@ -53,27 +35,24 @@ processes, Go 1.24.0. Absolute numbers are host-specific; the *shapes* and
 
 ![Throughput vs concurrency](results/img/throughput_vs_concurrency.png)
 
-| Concurrency | Write ops/sec | Read ops/sec | Read ÷ Write |
+| Concurrency | Write ops/sec | Read ops/sec | Read / write ratio |
 |---:|---:|---:|---:|
-| 1 | 99 | 16,480 | 167× |
-| 4 | 313 | 45,571 | 146× |
-| 8 | 527 | 60,852 | 115× |
-| 16 | 875 | 67,158 | 77× |
-| 32 | 1,397 | 71,759 | 51× |
-| 64 | 2,410 | 69,877 | 29× |
+| 1 | 99 | 16,480 | 167 |
+| 4 | 313 | 45,571 | 146 |
+| 8 | 527 | 60,852 | 115 |
+| 16 | 875 | 67,158 | 77 |
+| 32 | 1,397 | 71,759 | 51 |
+| 64 | 2,410 | 69,877 | 29 |
 
-- **Writes** scale close to linearly with concurrency (99 → 2,410 ops/sec) — the
-  single-request latency is dominated by the consensus commit, so adding
-  in-flight clients amortizes that cost and keeps filling the pipeline.
-- **Reads** are 1–2 orders of magnitude faster (a map lookup on the leader) and
-  **saturate at ~70k ops/sec** around 32 clients; beyond that, adding clients
-  stops helping (CPU/HTTP-bound), the classic throughput plateau.
+Write throughput increases with concurrency (99 to 2,410 ops/sec over the range tested). Per-request write latency is dominated by the commit path, so additional in-flight requests improve pipeline utilization.
+
+Read throughput is higher by one to two orders of magnitude and levels off near 70k ops/sec between 32 and 64 clients, consistent with CPU or HTTP handling limits on a single host.
 
 ---
 
 ## 3. Latency percentiles
 
-### Writes (PUT — go through Raft)
+### Writes (PUT, Raft commit path)
 
 ![Write latency percentiles](results/img/write_latency_percentiles.png)
 
@@ -85,12 +64,9 @@ processes, Go 1.24.0. Absolute numbers are host-specific; the *shapes* and
 | 32 | 20.4 | 41.4 | 54.5 |
 | 64 | 23.3 | 48.8 | 72.8 |
 
-A ~**11–12 ms floor** even at concurrency 1 reflects the unavoidable
-commit cost (replicate to a majority + persist to disk). As load rises, p50
-grows slowly but the **tail (p99) fans out sharply** (12 → 73 ms) — textbook
-queuing behavior as the leader's commit pipeline approaches saturation.
+At concurrency 1, write latency has a floor of roughly 11–12 ms, reflecting replication to a majority and persistence to disk. Median latency grows modestly with load; p99 increases more sharply (12 ms to 73 ms at 64 clients), which is expected as the commit path saturates.
 
-### Reads (GET — served from leader memory)
+### Reads (GET, leader in-memory path)
 
 ![Read latency percentiles](results/img/read_latency_percentiles.png)
 
@@ -100,13 +76,11 @@ queuing behavior as the leader's commit pipeline approaches saturation.
 | 16 | 0.168 | 0.62 | 1.52 |
 | 64 | 0.67 | 2.73 | 4.39 |
 
-Reads are **sub-millisecond** at low concurrency and stay in the low single-digit
-milliseconds even at p99 under heavy load — there is no consensus or disk on the
-read path.
+Reads remain sub-millisecond at low concurrency and stay in the low single-digit milliseconds at p99 under the loads tested. The read path does not run consensus or disk I/O.
 
 ---
 
-## 4. Request routing: leader-direct vs follower-forwarded
+## 4. Request routing: leader vs follower
 
 ![Routing comparison](results/img/routing_comparison.png)
 
@@ -115,15 +89,11 @@ read path.
 | Leader (direct) | 807 | 19.3 | 35.5 |
 | Follower (forwarded) | 823 | 19.3 | 33.2 |
 
-Sending writes to a **follower** (which forwards to the leader over gRPC) is
-**effectively free** here — within run-to-run noise of writing directly to the
-leader. The intra-host forwarding hop is negligible next to the consensus +
-disk commit cost that dominates every write. Clients don't need to discover the
-leader to get good write performance.
+Writes sent to a follower, which forwards to the leader over gRPC, show throughput and latency within run-to-run variation of writes sent directly to the leader. On loopback, the forwarding hop is small relative to commit and disk cost. This does not imply that leader discovery is unnecessary in production; it only characterizes this single-host setup.
 
 ---
 
-## 5. Cluster size & failover
+## 5. Cluster size and failover
 
 ### Write performance vs cluster size
 
@@ -134,15 +104,9 @@ leader to get good write performance.
 | 3 nodes | 875 | 18.6 | 32.4 |
 | 5 nodes | 942 | 17.0 | 26.2 |
 
-Going from 3 to 5 nodes (16 clients, writes to leader) **did not degrade** write
-performance — the two were comparable, with the 5-node run marginally ahead in
-this sample. The leader replicates to followers in parallel and only needs a
-**majority** to ack (2-of-3 vs 3-of-5), so two extra local followers add little
-to the critical path. This is a single operating point and the difference is
-within measurement noise; the takeaway is "no meaningful penalty," not "bigger
-is faster."
+At 16 concurrent clients writing to the leader, 3-node and 5-node clusters performed similarly; the 5-node run was slightly faster in this sample. The leader replicates to followers in parallel and only requires a majority of acknowledgments (2 of 3 vs 3 of 5), so two additional local followers did not add measurable cost on this host. This is a single operating point; treat the difference as within measurement noise.
 
-### Availability: recovery after a leader crash
+### Recovery after leader failure
 
 ![Failover recovery](results/img/failover_recovery.png)
 
@@ -151,35 +115,29 @@ is faster."
 | 1 | node3 → node2 | 386 |
 | 2 | node2 → node3 | 346 |
 | 3 | node3 → node2 | 339 |
-| **Mean** | | **357** |
+| Mean | | 357 |
 
-We kill the leader mid-operation and time until a write (sent to a surviving
-follower) is committed again. Recovery averaged **~357 ms**, squarely in the
-expected band for RaftDB's **300–450 ms randomized election timeout** (per the
-README). In other words, after a leader failure the cluster restores write
-availability in roughly one election timeout — no manual intervention.
+The leader was killed during load. Recovery time is measured from the kill until a write to a surviving follower commits successfully. Mean recovery was 357 ms, which aligns with RaftDB’s randomized election timeout of 300–450 ms (see project README). No manual steps were required for the cluster to accept writes again.
 
 ---
 
 ## 6. Limitations
 
-- **Single host:** all nodes share one machine, so replication "network" RTT is
-  loopback. On real networks, write latency and failover time would rise by the
-  inter-node RTT (etcd notes ~50 ms cross-US, up to ~400 ms cross-continent).
-- **Closed-loop generation:** this model lets the harness slow down when the
-  server slows down, so it **under-reports tail latency** vs an open-loop /
-  fixed-arrival-rate generator (coordinated omission). Treat p99 as a lower bound.
-- **Small, uniform values** (`"v"`) and unique keys; no payload-size, key-skew,
-  or read/write-mix sweeps.
-- **Single-point** cluster-size and routing comparisons (one concurrency level).
-- Numbers are **host-relative**; re-run on the target environment for absolute figures.
+- **Single host.** All nodes share one machine; replication uses loopback networking. Real deployments would add inter-node RTT to write latency and failover time.
+- **Closed-loop load.** When the server slows, clients slow with it, which can under-report tail latency compared with fixed-rate open-loop generators. Treat p99 as a lower bound under this harness.
+- **Workload.** Small uniform values and unique keys only; no sweeps over payload size, key distribution, or mixed read/write ratios.
+- **Sample size.** Cluster-size and routing comparisons use one concurrency level each.
+- **Portability.** Re-run on the target environment for absolute figures.
 
-## 7. Headline takeaways
+---
 
-1. **Reads are ~30–170× faster than writes** — the defining trait of this Raft KV
-   store. Reads peak ~70k ops/sec; writes reach ~2.4k ops/sec at 64 clients.
-2. **Write latency has a ~11 ms consensus+disk floor** and a tail that fans out
-   under load (p99 12 → 73 ms); reads stay sub-millisecond to low-ms.
-3. **Follower forwarding is essentially free** — no need to target the leader.
-4. **3 vs 5 nodes: no meaningful write penalty** at this scale.
-5. **Failover restores writes in ~357 ms**, ≈ one election timeout.
+## 7. Summary
+
+| Observation | Result (this run) |
+|---|---|
+| Read vs write throughput | Reads peak near 70k ops/sec; writes reach ~2.4k ops/sec at 64 clients. |
+| Write latency | ~11 ms floor at low load; p99 rises to ~73 ms at 64 clients. |
+| Read latency | Sub-ms at low load; p99 under 5 ms at 64 clients. |
+| Follower forwarding | No measurable penalty vs direct leader writes on loopback. |
+| 3 vs 5 nodes | Comparable write performance at 16 clients. |
+| Failover | Mean write recovery ~357 ms after leader kill. |
