@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -101,6 +102,15 @@ func (n *ClusterNode) Restart(binary string) error {
 	return n.Start(binary, "false")
 }
 
+func (c *Cluster) Resize(n int) error {
+	if n < 3 || n > 9 {
+		return fmt.Errorf("nodes must be between 3 and 9, got %d", n)
+	}
+	c.StopAll()
+	c.Nodes = NewCluster(n).Nodes
+	return nil
+}
+
 func (c *Cluster) NodeByID(id string) *ClusterNode {
 	for _, node := range c.Nodes {
 		if node.ID == id {
@@ -108,6 +118,16 @@ func (c *Cluster) NodeByID(id string) *ClusterNode {
 		}
 	}
 	return nil
+}
+
+func (c *Cluster) RunningCount() int {
+	count := 0
+	for _, node := range c.Nodes {
+		if node.Running {
+			count++
+		}
+	}
+	return count
 }
 
 func WaitForLeader(c *Cluster, timeout time.Duration) error {
@@ -163,11 +183,18 @@ func findRepoRoot() string {
 	if err != nil {
 		return "."
 	}
-	if _, err := os.Stat(wd + "/main.go"); err == nil {
-		return wd
-	}
-	if _, err := os.Stat(wd + "/../main.go"); err == nil {
-		return wd + "/.."
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "core")); err == nil {
+				return dir
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 	return wd
 }

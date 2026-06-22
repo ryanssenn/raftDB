@@ -1,6 +1,8 @@
-# RaftDB Beginner's Guide
+# RaftDB Internals Guide
 
-This guide explains what Raft is, how this project implements it, and how to read the Go source. RaftDB is a learning project: it runs a real multi-node cluster, but it is not a production database.
+This guide explains what Raft is, how this project implements it, and how to read the Go source. For hands-on exploration, start with the [interactive playground](playground.md) (`go run ./visualizer --no-browser --sandbox`).
+
+RaftDB is a learning project: it runs a real multi-node cluster, but it is not a production database.
 
 After reading this, you should understand why a cluster needs a leader, what the log and commit index mean, and which files to open when you want to trace a write from HTTP to disk.
 
@@ -159,13 +161,21 @@ Read in this order the first time you walk through the source. Allow 30–45 min
 6. **`core/node_test.go`**: Short tests that show commit/apply and voting rules in isolation.
 7. **`test/integration_test.go`**: Full cluster scenarios: election, replication, persistence, partitions.
 
-Optional after that: `visualizer/` for a browser animation of scripted scenarios, and `benchmarks/` for throughput and latency numbers.
+Optional after that: the [interactive playground](playground.md) for hands-on experimentation, and `benchmarks/` for throughput and latency numbers.
 
 ---
 
 ## How to explore
 
-**Run a cluster.** Build and start three nodes as shown in the [README](../README.md). Send writes to any node; reads and writes reach the leader automatically.
+**Interactive playground (recommended).**
+
+```bash
+go run ./visualizer --no-browser --sandbox
+```
+
+Configure a cluster, send writes, kill nodes, and simulate partitions in the browser. See [playground.md](playground.md).
+
+**Run a cluster manually.** Build and start three nodes as shown in the [README](../README.md). Send writes to any node; reads and writes reach the leader automatically.
 
 **Integration tests.**
 
@@ -179,13 +189,13 @@ go test -v ./test
 go test -v ./core
 ```
 
-**Visualizer demo.**
+**Guided tour.**
 
 ```bash
-go run ./visualizer visualizer/scenarios/showcase.json
+go run ./visualizer --no-browser visualizer/scenarios/showcase.json
 ```
 
-Opens a browser animation of boot, writes, leader failure, and recovery. See [visualizer/README.md](../visualizer/README.md) for other scenarios.
+Auto-runs a lifecycle scenario with live visualization. See [visualizer/README.md](../visualizer/README.md) for other tours.
 
 ---
 

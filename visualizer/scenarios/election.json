@@ -1,0 +1,11 @@
+{
+  "name": "Leader Election",
+  "nodes": 5,
+  "steps": [
+    { "wait": "2s", "comment": "wait for initial election" },
+    { "kill": "leader", "comment": "trigger re-election" },
+    { "wait": "3s", "comment": "election in progress" },
+    { "put": { "node": "node1", "key": "elect:1", "value": "after-failover" } },
+    { "wait": "2s" }
+  ]
+}

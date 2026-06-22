@@ -1,8 +1,24 @@
-# RaftDB
+# Raft Playground
 
-A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf) with a small in-memory key-value store on top. The goal is to learn how replicated consensus works; this is not a production database.
+Go implementation of Raft with a browser UI on top. You start a real cluster, send writes, kill nodes, and watch elections and replication happen.
 
-The implementation covers leader election, log replication, disk persistence, and recovery. Clients use HTTP; nodes exchange Raft RPCs over gRPC.
+This is for learning, not production. The Raft code is tested (unit + integration) and benchmarked. Details below.
+
+## Try it
+
+```bash
+go run ./visualizer --no-browser --sandbox
+```
+
+Open http://localhost:8080. Pick a node count, click **Configure**, then **Start**.
+
+Or run a scripted tour that drives the cluster for you:
+
+```bash
+go run ./visualizer --no-browser visualizer/scenarios/showcase.json
+```
+
+More detail: [docs/playground.md](docs/playground.md)
 
 ## Benchmarks
 
@@ -17,6 +33,24 @@ The implementation covers leader election, log replication, disk persistence, an
 | Failover recovery after leader crash | ~327 ms |
 
 These numbers come from a Cursor Cloud VM with 4 vCPUs, 16 GB RAM, and Go 1.24.0. Re-run with `go run ./benchmarks` on your own machine.
+
+## The Raft implementation
+
+A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf) with a small in-memory key-value store on top.
+
+The implementation covers leader election, log replication, disk persistence, and recovery. Clients use HTTP; nodes exchange Raft RPCs over gRPC.
+
+Read the code: [docs/guide.md](docs/guide.md)
+
+## Tests
+
+```bash
+go test -race ./core          # unit tests, no cluster
+go test -v ./test             # 5-node integration tests
+go test ./visualizer/...      # playground API
+```
+
+Integration tests build the binary, launch a 5-node cluster, and drive it over HTTP. What each test covers: [docs/development/testing.md](docs/development/testing.md)
 
 ## Running a cluster
 
@@ -34,7 +68,7 @@ go build -o ryanDB .
 
 Start `node2` and `node3` on ports `8002`/`8003` with the same `--peers` string. Use `--reset=false` to keep logs between restarts, or `./launch_node.sh 1 true` to start one node via the helper script.
 
-## HTTP API
+### HTTP API
 
 | Endpoint | Description |
 |---|---|
@@ -47,25 +81,6 @@ curl "http://localhost:8001/put?key=foo&value=bar"
 curl "http://localhost:8002/get?key=foo"
 curl "http://localhost:8001/status"
 ```
-
-## Tests
-
-Integration tests build the binary, launch a 5-node cluster, and drive it over HTTP:
-
-```bash
-go test -v ./test
-```
-
-## Layout
-
-| Path | Purpose |
-|---|---|
-| `docs/guide.md` | Beginner's guide to Raft and this codebase |
-| `docs/performance.md` | Performance improvement opportunities |
-| `core/` | Raft logic |
-| `main.go` | HTTP server entrypoint |
-| `test/` | Integration tests |
-| `visualizer/` | Optional browser demo |
 
 ## Not yet implemented
 

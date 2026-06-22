@@ -1,0 +1,16 @@
+{
+  "name": "Network Partition",
+  "nodes": 5,
+  "steps": [
+    { "wait": "2s" },
+    { "put": { "node": "node1", "key": "part:1", "value": "initial" } },
+    { "wait": "1s" },
+    { "partition": { "isolated": ["node1", "node2"] }, "comment": "minority partition isolated" },
+    { "wait": "1s" },
+    { "put": { "node": "node3", "key": "part:2", "value": "majority-side" } },
+    { "wait": "2s" },
+    { "clear_partition": true, "comment": "heal network" },
+    { "wait": "3s", "comment": "logs converge" },
+    { "get": { "node": "node1", "key": "part:2", "expect": "majority-side" } }
+  ]
+}

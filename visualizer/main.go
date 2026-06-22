@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
 	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
@@ -22,17 +23,8 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "skip opening browser")
 	binary := flag.String("binary", "", "path to ryanDB binary")
 	demoPace := flag.Bool("demo", true, "compress scenario waits for presentation pacing")
+	sandbox := flag.Bool("sandbox", false, "start in interactive sandbox mode (no auto scenario)")
 	flag.Parse()
-
-	if flag.NArg() < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: go run ./visualizer [flags] <scenario.json>\n")
-		os.Exit(1)
-	}
-
-	scenario, err := LoadScenario(flag.Arg(0))
-	if err != nil {
-		log.Fatalf("load scenario: %v", err)
-	}
 
 	repoRoot := findRepoRoot()
 	binaryPath, err := ensureBinary(repoRoot, *binary)
@@ -40,38 +32,49 @@ func main() {
 		log.Fatalf("binary: %v", err)
 	}
 
-	showcaseMode := scenario.Showcase
-	if showcaseMode {
-		*demoPace = false
-	}
+	srv := NewServer(binaryPath, *sandbox || flag.NArg() == 0)
 
-	harness.KillPorts(scenario.Nodes)
-	cluster := NewCluster(scenario.Nodes)
-
-	log.Printf("starting %d-node cluster...", scenario.Nodes)
-	srv := &Server{
-		cluster:    cluster,
-		scenario:   scenario,
-		binaryPath: binaryPath,
-		demoPace:   *demoPace,
-		eventSince: map[string]int64{},
-	}
-
-	if showcaseMode {
-		srv.showcaseStart = time.Now()
-		if err := cluster.StartStaggered(binaryPath, true, 500*time.Millisecond); err != nil {
-			log.Fatalf("start cluster: %v", err)
+	if flag.NArg() >= 1 {
+		scenario, err := LoadScenario(flag.Arg(0))
+		if err != nil {
+			log.Fatalf("load scenario: %v", err)
 		}
-		log.Printf("showcase mode: staged boot, scenario begins immediately")
+		srv.mu.Lock()
+		srv.scenario = scenario
+		srv.demoPace = *demoPace
+		if scenario.Showcase {
+			srv.demoPace = false
+		}
+		srv.mu.Unlock()
+
+		harness.KillPorts(scenario.Nodes)
+		srv.mu.Lock()
+		srv.cluster = NewCluster(scenario.Nodes)
+		srv.mu.Unlock()
+
+		log.Printf("starting %d-node cluster for guided tour...", scenario.Nodes)
+		if scenario.Showcase {
+			srv.mu.Lock()
+			srv.showcaseStart = time.Now()
+			srv.mu.Unlock()
+			if err := srv.cluster.StartStaggered(binaryPath, true, 500*time.Millisecond); err != nil {
+				log.Fatalf("start cluster: %v", err)
+			}
+		} else {
+			if err := srv.cluster.StartAll(binaryPath, true); err != nil {
+				log.Fatalf("start cluster: %v", err)
+			}
+		}
+		srv.mu.Lock()
+		srv.clusterStarted = true
+		srv.appendLog("cluster started (" + fmt.Sprintf("%d", scenario.Nodes) + " nodes)")
+		srv.appendLog("running scenario: " + scenario.Name)
+		srv.mu.Unlock()
+		go srv.runScenario()
 	} else {
-		if err := cluster.StartAll(binaryPath, true); err != nil {
-			log.Fatalf("start cluster: %v", err)
-		}
-		log.Printf("leader elected, running scenario: %s", scenario.Name)
+		log.Printf("sandbox mode: open UI to configure and start cluster")
+		srv.appendLog("playground ready; configure cluster in UI")
 	}
-	srv.appendLog("cluster started (" + fmt.Sprintf("%d", scenario.Nodes) + " nodes)")
-	srv.appendLog("running scenario: " + scenario.Name)
-	go srv.runScenario()
 
 	static, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -85,7 +88,7 @@ func main() {
 	url := "http://localhost" + addr
 
 	go func() {
-		log.Printf("visualizer UI at %s", url)
+		log.Printf("playground UI at %s", url)
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			log.Fatalf("server: %v", err)
 		}
@@ -100,5 +103,5 @@ func main() {
 	<-sig
 
 	log.Println("shutting down...")
-	cluster.StopAll()
+	srv.cluster.StopAll()
 }

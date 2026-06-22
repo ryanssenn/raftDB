@@ -1,175 +1,95 @@
-# RaftDB Visualizer
+# Raft Playground
 
-A scripted demo tool that starts a Raft cluster, runs a JSON scenario, and animates what happens in the browser. You pass a scenario file: the visualizer executes it and you watch the cluster react.
+Interactive distributed-systems laboratory powered by a production-quality Raft implementation in Go.
 
 ## Quick start
 
-### 60-second showcase (loops)
+```bash
+go run ./visualizer --no-browser --sandbox
+```
+
+Open [http://localhost:8080](http://localhost:8080). Configure a 3–9 node cluster, click **Start**, and experiment.
+
+### Guided tour (auto-run)
 
 ```bash
-go run ./visualizer visualizer/scenarios/showcase.json
+go run ./visualizer --no-browser visualizer/scenarios/showcase.json
 ```
 
-A choreographed **60-second loop**: boot → writes → **leader dies** → new leader elected → recovery writes → stable → repeat. Scene titles mark each beat; the hub layout keeps all five machines visible at once.
+## Modes
 
-Timeline (approximate):
+| Mode | Command | Behavior |
+|---|---|---|
+| **Sandbox** (default) | `go run ./visualizer --sandbox` | UI controls cluster lifecycle |
+| **Guided tour** | `go run ./visualizer <scenario.json>` | Auto-starts cluster and runs scripted steps |
 
-| Time | Scene |
-|------|-------|
-| 0–3s | Empty stage → nodes join one by one → leader elected |
-| 3–11s | Client writes every 1.5s |
-| 11–15s | Leader fails, new election, writes continue |
-| ~19s | Failed leader **rejoins** (`restart: killed`) |
-| 19–54s | Continuous writes every 1.5s |
-| 54–60s | Brief stable beat, loop restarts |
+## Sandbox controls
 
-Showcase mode uses exact timing and **continues past missed writes** during leader failure (logged as `(missed)` in the scenario log, animation keeps running).
+### Cluster
+- **Nodes** slider (3–9) + **Configure** prepares the cluster
+- **Start** / **Stop** boot or kill all node processes
 
-### Full demo (~2 minutes)
+### Clients
+- Up to three clients (`client-A`, `client-B`, `client-C`)
+- **Write** / **Read** sends requests to any running node (follower forwarding is animated)
 
-From the repo root:
+### Failure lab
+- Select nodes → **Kill** / **Restart**
+- **Network partition**: select isolated nodes → **Isolate** (blocks gRPC between partitions)
+- **Clear** restores connectivity
 
-```bash
-go run ./visualizer visualizer/scenarios/demo.json
-```
+### Guided tours
+Preset scenarios in `visualizer/scenarios/`:
+- `showcase.json`: full lifecycle loop
+- `election.json`: leader re-election
+- `failure.json`: leader kill and recovery
+- `partition.json`: network split and healing
+- `persistence.json`: restart and verify data
 
-This will:
+Load a tour from the sidebar, then **Run** / **Pause**.
 
-1. Build `ryanDB` if it is not already present
-2. Start a 5-node cluster
-3. Open `http://localhost:8080` in your browser
-4. Run the scenario step-by-step with slow waits so animations are easy to follow
+## API reference
 
-Press `Ctrl+C` to stop the visualizer and shut down all nodes.
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/stream` | SSE stream of status + events |
+| GET | `/api/cluster/status` | Node snapshots |
+| POST | `/api/cluster/create` | `{"nodes": 5}` |
+| POST | `/api/cluster/start` | Boot cluster |
+| POST | `/api/cluster/stop` | Stop cluster |
+| POST | `/api/cluster/nodes/{id}/kill` | Kill node |
+| POST | `/api/cluster/nodes/{id}/restart` | Restart node |
+| POST | `/api/cluster/partition` | `{"isolated": ["node1"]}` |
+| POST | `/api/cluster/partition/clear` | Restore network |
+| POST | `/api/request` | `{"client","op","key","value","node"}` |
+| POST | `/api/scenario/load` | `{"path": "visualizer/scenarios/election.json"}` |
+| POST | `/api/scenario/run` | Start loaded scenario |
+| POST | `/api/scenario/pause` | Toggle pause |
 
-## Flags
+## Scenario JSON format
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--port` | `8080` | Port for the visualizer UI |
-| `--no-browser` | `false` | Do not auto-open the browser |
-| `--binary` | `ryanDB` in repo root | Path to the raftDB binary |
-| `--demo` | `true` | Compress long `wait` steps for presentation pacing |
-
-Showcase mode is enabled when the scenario JSON sets `"showcase": true` (staged boot, exact timing).
-
-Example:
-
-```bash
-go run ./visualizer --port 3000 --no-browser visualizer/scenarios/demo.json
-```
-
-## What you see in the UI
-
-The browser view is passive: you watch, you do not interact.
-
-**Diagram (hub layout)**
-- Four followers across the top, **leader in the center** (larger card, green border), **client below**
-- Visible leader↔follower links; each machine has its own log strip
-- Labeled packets: `write`, `replicate`, `ack`, `vote`: smooth, readable pacing
-- Commit fills the committed zone on every node; failures show dashed offline cards
-
-**HUD**
-- Commit index, quorum progress, current term
-- Showcase mode: scene card + 30s timeline bar (no step counter)
-
-**Event types shown**
-- Client request (blue): visualizer sends put/get to a node
-- Forward (teal): follower forwards to leader
-- Replicate (purple): leader append entries to followers
-- Vote (orange): election request or vote granted
-
-## Scenario file format
-
-Scenarios are JSON files with three top-level fields:
+Each step must have exactly one action:
 
 ```json
-{
-  "name": "My scenario",
-  "nodes": 5,
-  "steps": [ ... ]
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `name` | Display name shown in the UI |
-| `nodes` | Cluster size (3–9) |
-| `steps` | Ordered list of actions |
-
-Each step must have **exactly one** action. Use `"wait"` steps between actions to control pacing: longer waits (e.g. `"5s"`) make animations easier to follow.
-
-### Step types
-
-**Wait**
-
-```json
-{ "wait": "5s", "comment": "optional description" }
-```
-
-Duration uses Go syntax: `"500ms"`, `"2s"`, `"1m"`.
-
-**Put**
-
-```json
-{ "put": { "node": "node3", "key": "foo", "value": "bar" } }
-```
-
-Sends a write to the given node's HTTP API. If the node is a follower, the request is forwarded to the leader.
-
-**Get**
-
-```json
-{ "get": { "node": "node5", "key": "foo", "expect": "bar" } }
-```
-
-Reads a key from the given node. If `expect` is set, the scenario fails when the value does not match.
-
-**Kill**
-
-```json
-{ "kill": "node1", "comment": "optional description" }
-```
-
-Stops a node's process. The UI shows it as offline.
-
-**Restart**
-
-```json
-{ "restart": "node1", "comment": "optional description" }
-```
-
-Restart a stopped node with existing logs (`--reset=false`). Use `"killed"` to restart the node most recently stopped by a `kill` step:
-
-```json
+{ "wait": "2s" }
+{ "put": { "node": "node1", "key": "k", "value": "v" } }
+{ "get": { "node": "node2", "key": "k", "expect": "v" } }
+{ "kill": "leader" }
 { "restart": "killed" }
+{ "partition": { "isolated": ["node1", "node2"] } }
+{ "clear_partition": true }
 ```
-
-Set `"loop": true` on a scenario to restart automatically when it finishes.
-
-## Example scenarios
-
-| File | What it demonstrates |
-|------|----------------------|
-| `scenarios/showcase.json` | **60-second loop**: boot, writes, leader failure, replacement, recovery |
-| `scenarios/demo.json` | Full demo (~2 min): writes, leader kill, restarts, catch-up |
-
-## How it works
-
-```
-scenario.json → visualizer → ryanDB nodes (HTTP 8001+, gRPC 9001+)
-                    ↓
-              browser UI (polls visualizer API)
-```
-
-The visualizer is the only component that talks to raft nodes. It starts them, executes scenario steps, and polls `/status` and `/events` on each running node. Raft RPC between nodes is observed via each node's event buffer.
 
 ## Ports
 
-For a cluster of size `N`:
+For N nodes: HTTP `8001…8000+N`, gRPC `9001…9000+N`. The playground calls `KillPorts` on startup to free them.
 
-- HTTP (client API): `8001` – `8000+N`
-- gRPC (Raft RPCs): `9001` – `9000+N`
-- Visualizer UI: `8080` (or `--port`)
+## Architecture
 
-Make sure these ports are free before running a scenario.
+```
+Browser UI  ←SSE/REST→  Playground server  ←HTTP→  ryanDB nodes (gRPC Raft)
+                              ↓
+                     scenario driver (guided tours)
+```
+
+See [docs/playground.md](../docs/playground.md) for a full user guide and [docs/guide.md](../docs/guide.md) for Raft internals.

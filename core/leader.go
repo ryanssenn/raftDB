@@ -114,6 +114,16 @@ func (n *Node) ReplicateToFollower(id string) {
 			n.Logger.Sync()
 		}
 
+		if err := n.checkPeerBlocked(id); err != nil {
+			if len(entries) == 0 {
+				select {
+				case <-n.ReplicateNotify:
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			continue
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		resp, err := n.Clients[id].AppendEntries(ctx, &req)
 		cancel()
