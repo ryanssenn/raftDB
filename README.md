@@ -1,94 +1,97 @@
 # Raft Playground
 
-An **interactive distributed-systems laboratory** for exploring Raft consensus — powered by a correct, tested, and performant Go implementation.
+Go implementation of Raft with a browser UI on top. You start a real cluster, send writes, kill nodes, and watch elections and replication happen.
 
-Run real multi-node clusters, send client requests, kill nodes, simulate network partitions, and watch leader elections, log replication, and commits animate in real time. The underlying Raft engine is unchanged: same correctness guarantees, same test suite, same benchmark numbers.
+This is for learning, not production. The Raft code is tested (unit + integration) and benchmarked — details below.
+
+## Try it
 
 ```bash
 go run ./visualizer --no-browser --sandbox
 ```
 
-Open **http://localhost:8080** — configure a cluster, click Start, and experiment.
+Open http://localhost:8080. Pick a node count, click **Configure**, then **Start**.
 
-## What you'll observe
-
-- **Client request flow** — writes to any node, forwarding to the leader
-- **Leader election** — randomized timeouts, voting, term increments
-- **Log replication** — append entries, acks, quorum tracking
-- **Node failures & recovery** — kill, restart, catch-up replication
-- **Network partitions** — isolate nodes, see quorum enforce safety
-- **Guided tours** — preset scenarios that walk through each concept
-
-Full user guide: [docs/playground.md](docs/playground.md)
-
-## Playground features
-
-| Feature | Description |
-|---|---|
-| Configurable cluster | 3–9 nodes, start/stop at runtime |
-| Multiple clients | Up to 3 independent client actors |
-| Failure lab | Kill, restart, network partition per node |
-| Live visualization | SSE-driven animations with educational callouts |
-| Guided tours | Lifecycle, election, failure, partition, persistence |
-
-## Correctness & testing
-
-This is an educational implementation, not a production database — but it is rigorously tested:
+Or run a scripted tour that drives the cluster for you:
 
 ```bash
-go test -race -count=1 -timeout 5m ./core      # 7 unit tests
-go test -count=1 -timeout 10m -v ./test         # 10 integration tests
-go test -count=1 -timeout 5m ./visualizer/... # playground API tests
+go run ./visualizer --no-browser visualizer/scenarios/showcase.json
 ```
 
-Integration tests launch a real 5-node cluster and verify elections, replication, persistence, partitions, and concurrent writes. Details: [docs/development/testing.md](docs/development/testing.md)
+## What it looks like
 
-Raft internals walkthrough: [docs/guide.md](docs/guide.md)
+Five nodes up, one leader elected:
 
-## Performance
+![Cluster running with a leader elected](docs/images/playground-start.png)
 
-3-node cluster on a single host ([full report](benchmarks/REPORT.md)):
+Write `user:1 = alice` from the sidebar. The request goes to a node, gets forwarded if needed, and replicates:
 
-| Metric | Result |
+![Write replicating to followers](docs/images/playground-write.png)
+
+Kill the leader in **Failure Lab**. The cluster picks a new one:
+
+![Leader killed, new leader elected](docs/images/playground-failover.png)
+
+More screenshots and walkthroughs: [docs/playground.md](docs/playground.md)
+
+## What you can do in the UI
+
+- Start/stop a cluster (3–9 nodes)
+- Send puts and gets from up to 3 clients
+- Kill and restart individual nodes
+- Isolate nodes to simulate a network partition
+- Load guided tours (election, failure, partition, persistence)
+
+## The Raft implementation
+
+Leader election, log replication, disk persistence, recovery. Clients talk HTTP; nodes talk gRPC.
+
+Not implemented: snapshots, dynamic membership.
+
+Read the code: [docs/guide.md](docs/guide.md)
+
+## Tests
+
+```bash
+go test -race ./core          # unit tests, no cluster
+go test -v ./test             # 5-node integration tests
+go test ./visualizer/...      # playground API
+```
+
+What each test covers: [docs/development/testing.md](docs/development/testing.md)
+
+## Benchmarks
+
+3-node cluster, single machine ([full report](benchmarks/REPORT.md)):
+
+| | |
 |---|---|
-| Read throughput (peak) | ~72,000 ops/sec |
-| Write throughput (64 clients) | ~19,500 ops/sec |
-| Read latency, p99 (16 clients) | ~1.3 ms |
-| Write latency, p99 (16 clients) | ~4 ms |
-| Failover recovery after leader crash | ~327 ms |
+| Reads (peak) | ~72k ops/sec |
+| Writes (64 clients) | ~19.5k ops/sec |
+| Read p99 (16 clients) | ~1.3 ms |
+| Write p99 (16 clients) | ~4 ms |
+| Failover after leader crash | ~327 ms |
 
-Re-run with `go run ./benchmarks` on your machine. Summary: [docs/performance/README.md](docs/performance/README.md)
+```bash
+go run ./benchmarks
+```
 
-## Running manually (CLI)
-
-Each node needs an HTTP port (`--port`) and a gRPC port (in `--peers`). Start at least three nodes:
+## Run nodes without the UI
 
 ```bash
 go build -o ryanDB .
 
-./ryanDB \
-  --id=node1 \
-  --port=8001 \
+./ryanDB --id=node1 --port=8001 \
   --peers=node1=127.0.0.1:9001,node2=127.0.0.1:9002,node3=127.0.0.1:9003 \
   --reset=true
 ```
 
-HTTP API: `GET /put?key=&value=`, `GET /get?key=`, `GET /status`
+Start node2 and node3 on 8002/8003 with the same peers string. API: `/put?key=&value=`, `/get?key=`, `/status`.
 
-## Layout
+## Repo layout
 
-| Path | Purpose |
-|---|---|
-| [docs/playground.md](docs/playground.md) | Playground user guide |
-| [docs/guide.md](docs/guide.md) | Raft internals walkthrough |
-| [docs/development/testing.md](docs/development/testing.md) | Test inventory & CI |
-| [docs/performance/](docs/performance/) | Benchmarks & optimization history |
-| `core/` | Raft logic |
-| `visualizer/` | Interactive playground |
-| `test/` | Integration tests |
-| `benchmarks/` | Load harness & report |
-
-## Not yet implemented
-
-- Log compaction / snapshots
-- Dynamic cluster membership
+- `core/` — Raft
+- `visualizer/` — playground UI + control server
+- `test/` — integration tests
+- `benchmarks/` — load tests
+- `docs/` — guides and the screenshots above

@@ -1,6 +1,6 @@
 # Playground User Guide
 
-The Raft Playground is an interactive laboratory for exploring distributed consensus. It runs real Raft nodes (not a simulation) and visualizes their behavior in real time.
+The playground runs real `ryanDB` processes and draws what they do. Not a simulation.
 
 ## Getting started
 
@@ -11,7 +11,9 @@ go run ./visualizer --no-browser --sandbox
 1. Set the node count (3–9) and click **Configure**
 2. Click **Start** and wait for a leader to appear in the HUD
 3. Send writes from any client to any node
-4. Watch replication, commits, and heartbeats animate on the canvas
+4. Watch replication, commits, and heartbeats on the canvas
+
+Screenshots: [playground-start.png](images/playground-start.png), [playground-write.png](images/playground-write.png), [playground-failover.png](images/playground-failover.png)
 
 ## What you'll see
 
