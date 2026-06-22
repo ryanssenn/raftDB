@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const eventCapacity = 200
+const eventCapacity = 1000
 
 type Event struct {
 	Seq     int64  `json:"seq"`

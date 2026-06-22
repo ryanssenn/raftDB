@@ -15,6 +15,27 @@ import (
 
 var node *core.Node
 
+func clientID(r *http.Request) string {
+	if id := strings.TrimSpace(r.URL.Query().Get("client")); id != "" {
+		return id
+	}
+	return "client"
+}
+
+func leaderIDStr() string {
+	if p := node.LeaderId.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+func voteForStr() string {
+	if p := node.VoteFor.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
 func get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	key := r.URL.Query().Get("key")
@@ -22,7 +43,7 @@ func get(w http.ResponseWriter, r *http.Request) {
 	if node.Events != nil {
 		node.Events.Record(core.Event{
 			Type: "client_request",
-			From: "client",
+			From: clientID(r),
 			To:   node.Id,
 			Op:   "get",
 			Key:  key,
@@ -39,7 +60,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	if node.Events != nil {
 		node.Events.Record(core.Event{
 			Type: "client_request",
-			From: "client",
+			From: clientID(r),
 			To:   node.Id,
 			Op:   "put",
 			Key:  key,
@@ -67,13 +88,27 @@ func status(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"id":           node.Id,
 		"state":        node.State,
+		"stateName":    node.StateName(),
 		"term":         node.Term.Load(),
-		"leaderId":     node.LeaderId.Load(),
+		"leaderId":     leaderIDStr(),
+		"voteFor":      voteForStr(),
 		"commitIndex":  node.CommitIndex.Load(),
 		"lastApplied":  node.LastApplied.Load(),
 		"logLength":    node.GetLogSize(),
 		"matchIndex":   matchIndex,
 		"nextIndex":    nextIndex,
+		"blockedPeers": node.BlockedPeerList(),
+	})
+}
+
+func logHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	tail, _ := strconv.Atoi(r.URL.Query().Get("tail"))
+	if tail <= 0 {
+		tail = 20
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"entries": node.GetLogTail(tail),
 	})
 }
 
@@ -85,6 +120,38 @@ func events(w http.ResponseWriter, r *http.Request) {
 		"events":    evts,
 		"latestSeq": latest,
 	})
+}
+
+func simulateBlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	peer := strings.TrimSpace(r.URL.Query().Get("peer"))
+	if peer == "" {
+		http.Error(w, "peer required", http.StatusBadRequest)
+		return
+	}
+	core.PeerBlockMu.Lock()
+	node.BlockPeer(peer)
+	core.PeerBlockMu.Unlock()
+	w.WriteHeader(http.StatusOK)
+}
+
+func simulateUnblock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	peer := strings.TrimSpace(r.URL.Query().Get("peer"))
+	core.PeerBlockMu.Lock()
+	if peer == "" {
+		node.UnblockAllPeers()
+	} else {
+		node.UnblockPeer(peer)
+	}
+	core.PeerBlockMu.Unlock()
+	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
@@ -125,7 +192,10 @@ func main() {
 	http.HandleFunc("/get", get)
 	http.HandleFunc("/put", put)
 	http.HandleFunc("/status", status)
+	http.HandleFunc("/log", logHandler)
 	http.HandleFunc("/events", events)
+	http.HandleFunc("/simulate/block", simulateBlock)
+	http.HandleFunc("/simulate/unblock", simulateUnblock)
 
 	log.Fatalf("%s: %v", *id, http.ListenAndServe(":"+*port, nil))
 }

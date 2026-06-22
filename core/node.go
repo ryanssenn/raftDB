@@ -67,6 +67,7 @@ type Node struct {
 	ApplyCond   *sync.Cond
 
 	LeaderId           atomic.Pointer[string]
+	BlockedPeers       sync.Map
 	ResetElectionTimer chan struct{}
 	ReplicateNotify    chan struct{}
 	Logger             *Logger
@@ -199,6 +200,71 @@ func (n *Node) GetLogTerm(index int) int64 {
 	return n.Log[index].Term
 }
 
+type LogEntryView struct {
+	Index int64  `json:"index"`
+	Term  int64  `json:"term"`
+	Op    string `json:"op"`
+	Key   string `json:"key"`
+	Value string `json:"value,omitempty"`
+}
+
+func (n *Node) GetLogTail(tail int) []LogEntryView {
+	n.LogMu.Lock()
+	defer n.LogMu.Unlock()
+	if tail <= 0 {
+		tail = 20
+	}
+	start := len(n.Log) - tail
+	if start < 0 {
+		start = 0
+	}
+	out := make([]LogEntryView, 0, len(n.Log)-start)
+	for i := start; i < len(n.Log); i++ {
+		e := n.Log[i]
+		out = append(out, LogEntryView{
+			Index: int64(i),
+			Term:  e.Term,
+			Op:    e.Command.Op,
+			Key:   e.Command.Key,
+			Value: e.Command.Value,
+		})
+	}
+	return out
+}
+
+func (n *Node) StateName() string {
+	switch n.State {
+	case Follower:
+		return "follower"
+	case Candidate:
+		return "candidate"
+	case Leader:
+		return "leader"
+	default:
+		return "unknown"
+	}
+}
+
+func (n *Node) BlockPeer(peer string) {
+	n.BlockedPeers.Store(peer, true)
+}
+
+func (n *Node) UnblockPeer(peer string) {
+	n.BlockedPeers.Delete(peer)
+}
+
+func (n *Node) UnblockAllPeers() {
+	n.BlockedPeers.Range(func(key, _ any) bool {
+		n.BlockedPeers.Delete(key)
+		return true
+	})
+}
+
+func (n *Node) IsPeerBlocked(peer string) bool {
+	_, ok := n.BlockedPeers.Load(peer)
+	return ok
+}
+
 func (n *Node) ForwardToLeader(command *Command) string {
 	serializedCommand, err := json.Marshal(*command)
 	if err != nil {
@@ -211,6 +277,10 @@ func (n *Node) ForwardToLeader(command *Command) string {
 
 	client, ok := n.Clients[n.leaderID()]
 	if !ok || client == nil {
+		return "leader not accessible"
+	}
+
+	if err := n.checkPeerBlocked(n.leaderID()); err != nil {
 		return "leader not accessible"
 	}
 
@@ -299,6 +369,10 @@ func (n *Node) StartElection() {
 				To:   id,
 				Term: n.Term.Load(),
 			})
+
+			if err := n.checkPeerBlocked(id); err != nil {
+				continue
+			}
 
 			ctx, cancel := contextWithRPCTimeout()
 			voteResp, err := client.RequestVote(ctx, &voteReq)

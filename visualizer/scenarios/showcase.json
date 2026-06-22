@@ -5,9 +5,9 @@
   "loop": true,
   "durationMs": 60000,
   "scenes": [
-    { "id": "empty", "title": "Empty cluster", "subtitle": "Five machines waiting to join", "startMs": 0 },
+    { "id": "empty", "title": "Empty cluster", "subtitle": "Machines waiting to join", "startMs": 0 },
     { "id": "join", "title": "Nodes joining", "subtitle": "Machines boot one at a time", "startMs": 300 },
-    { "id": "elect", "title": "Leader elected", "subtitle": "One leader, four followers", "startMs": 2800 },
+    { "id": "elect", "title": "Leader elected", "subtitle": "One leader, remaining followers", "startMs": 2800 },
     { "id": "client", "title": "Client connects", "subtitle": "Writes begin flowing", "startMs": 3000 },
     { "id": "writes", "title": "Replicating", "subtitle": "Leader copies entries to every follower", "startMs": 4500 },
     { "id": "fail", "title": "Leader fails", "subtitle": "The leader stops responding", "startMs": 11500 },

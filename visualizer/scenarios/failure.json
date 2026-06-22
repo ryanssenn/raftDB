@@ -1,0 +1,16 @@
+{
+  "name": "Leader Failure & Recovery",
+  "nodes": 5,
+  "steps": [
+    { "wait": "2s" },
+    { "put": { "node": "node2", "key": "fail:1", "value": "before" } },
+    { "wait": "1s" },
+    { "kill": "leader" },
+    { "wait": "3s", "comment": "new leader elected" },
+    { "put": { "node": "node3", "key": "fail:2", "value": "after" } },
+    { "wait": "1.5s" },
+    { "restart": "killed", "comment": "revive old leader" },
+    { "wait": "3s", "comment": "catch-up replication" },
+    { "get": { "node": "node1", "key": "fail:2", "expect": "after" } }
+  ]
+}

@@ -1,10 +1,51 @@
-# RaftDB
+# Raft Playground
 
-A Go implementation of the [Raft paper](https://raft.github.io/raft.pdf) with a small in-memory key-value store on top. The goal is to learn how replicated consensus works; this is not a production database.
+An **interactive distributed-systems laboratory** for exploring Raft consensus — powered by a correct, tested, and performant Go implementation.
 
-The implementation covers leader election, log replication, disk persistence, and recovery. Clients use HTTP; nodes exchange Raft RPCs over gRPC.
+Run real multi-node clusters, send client requests, kill nodes, simulate network partitions, and watch leader elections, log replication, and commits animate in real time. The underlying Raft engine is unchanged: same correctness guarantees, same test suite, same benchmark numbers.
 
-## Benchmarks
+```bash
+go run ./visualizer --no-browser --sandbox
+```
+
+Open **http://localhost:8080** — configure a cluster, click Start, and experiment.
+
+## What you'll observe
+
+- **Client request flow** — writes to any node, forwarding to the leader
+- **Leader election** — randomized timeouts, voting, term increments
+- **Log replication** — append entries, acks, quorum tracking
+- **Node failures & recovery** — kill, restart, catch-up replication
+- **Network partitions** — isolate nodes, see quorum enforce safety
+- **Guided tours** — preset scenarios that walk through each concept
+
+Full user guide: [docs/playground.md](docs/playground.md)
+
+## Playground features
+
+| Feature | Description |
+|---|---|
+| Configurable cluster | 3–9 nodes, start/stop at runtime |
+| Multiple clients | Up to 3 independent client actors |
+| Failure lab | Kill, restart, network partition per node |
+| Live visualization | SSE-driven animations with educational callouts |
+| Guided tours | Lifecycle, election, failure, partition, persistence |
+
+## Correctness & testing
+
+This is an educational implementation, not a production database — but it is rigorously tested:
+
+```bash
+go test -race -count=1 -timeout 5m ./core      # 7 unit tests
+go test -count=1 -timeout 10m -v ./test         # 10 integration tests
+go test -count=1 -timeout 5m ./visualizer/... # playground API tests
+```
+
+Integration tests launch a real 5-node cluster and verify elections, replication, persistence, partitions, and concurrent writes. Details: [docs/development/testing.md](docs/development/testing.md)
+
+Raft internals walkthrough: [docs/guide.md](docs/guide.md)
+
+## Performance
 
 3-node cluster on a single host ([full report](benchmarks/REPORT.md)):
 
@@ -16,11 +57,11 @@ The implementation covers leader election, log replication, disk persistence, an
 | Write latency, p99 (16 clients) | ~4 ms |
 | Failover recovery after leader crash | ~327 ms |
 
-These numbers come from a Cursor Cloud VM with 4 vCPUs, 16 GB RAM, and Go 1.24.0. Re-run with `go run ./benchmarks` on your own machine.
+Re-run with `go run ./benchmarks` on your machine. Summary: [docs/performance/README.md](docs/performance/README.md)
 
-## Running a cluster
+## Running manually (CLI)
 
-Each node needs an HTTP port (`--port`) and a gRPC port (in `--peers` as `id=host:port`). Start at least three nodes for a working cluster.
+Each node needs an HTTP port (`--port`) and a gRPC port (in `--peers`). Start at least three nodes:
 
 ```bash
 go build -o ryanDB .
@@ -32,40 +73,20 @@ go build -o ryanDB .
   --reset=true
 ```
 
-Start `node2` and `node3` on ports `8002`/`8003` with the same `--peers` string. Use `--reset=false` to keep logs between restarts, or `./launch_node.sh 1 true` to start one node via the helper script.
-
-## HTTP API
-
-| Endpoint | Description |
-|---|---|
-| `GET /put?key=<key>&value=<value>` | Write a key |
-| `GET /get?key=<key>` | Read a key |
-| `GET /status` | Node id, term, role, and leader |
-
-```bash
-curl "http://localhost:8001/put?key=foo&value=bar"
-curl "http://localhost:8002/get?key=foo"
-curl "http://localhost:8001/status"
-```
-
-## Tests
-
-Integration tests build the binary, launch a 5-node cluster, and drive it over HTTP:
-
-```bash
-go test -v ./test
-```
+HTTP API: `GET /put?key=&value=`, `GET /get?key=`, `GET /status`
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
-| `docs/guide.md` | Beginner's guide to Raft and this codebase |
-| `docs/performance.md` | Performance improvement opportunities |
+| [docs/playground.md](docs/playground.md) | Playground user guide |
+| [docs/guide.md](docs/guide.md) | Raft internals walkthrough |
+| [docs/development/testing.md](docs/development/testing.md) | Test inventory & CI |
+| [docs/performance/](docs/performance/) | Benchmarks & optimization history |
 | `core/` | Raft logic |
-| `main.go` | HTTP server entrypoint |
+| `visualizer/` | Interactive playground |
 | `test/` | Integration tests |
-| `visualizer/` | Optional browser demo |
+| `benchmarks/` | Load harness & report |
 
 ## Not yet implemented
 

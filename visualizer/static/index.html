@@ -3,80 +3,146 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Raft: Consensus Engine</title>
+  <title>Raft Playground — Distributed Systems Laboratory</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="stage">
-    <div class="bg-gradient"></div>
-
-    <div id="hud">
-      <header class="hud-bar">
-        <div class="hud-left">
-          <span id="scenario-name" class="hud-scenario"></span>
-          <span id="demo-badge" class="demo-badge">demo pace</span>
-        </div>
-        <div class="hud-metrics">
-          <div class="metric">
-            <span class="metric-label">commit</span>
-            <span id="commit-index-display" class="metric-value">-</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">quorum</span>
-            <span id="quorum-text" class="metric-value">0 / 0</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">term</span>
-            <span id="term-display" class="metric-value">-</span>
-          </div>
-        </div>
-        <div class="hud-right">
-          <span id="step-display" class="hud-step"></span>
-          <div class="hud-progress"><div id="progress-fill"></div></div>
-          <span id="status-chip" class="status-chip hidden"></span>
-        </div>
+  <div id="app">
+    <aside id="sidebar">
+      <header class="sidebar-header">
+        <h1>Raft Playground</h1>
+        <p class="subtitle">Interactive consensus laboratory</p>
       </header>
-      <div id="quorum-bar-wrap" class="quorum-bar-wrap">
-        <div id="quorum-fill"></div>
+
+      <section class="panel" id="panel-cluster">
+        <h2>Cluster</h2>
+        <label class="field">
+          <span>Nodes</span>
+          <input type="range" id="node-count" min="3" max="9" value="5">
+          <output id="node-count-val">5</output>
+        </label>
+        <div class="btn-row">
+          <button id="btn-create" class="btn secondary">Configure</button>
+          <button id="btn-start" class="btn primary">Start</button>
+          <button id="btn-stop" class="btn danger" disabled>Stop</button>
+        </div>
+        <div id="cluster-health" class="health-chip">Not started</div>
+      </section>
+
+      <section class="panel" id="panel-clients">
+        <h2>Clients</h2>
+        <div id="client-tabs" class="client-tabs"></div>
+        <button id="btn-add-client" class="btn ghost small">+ Add client</button>
+        <label class="field">
+          <span>Target node</span>
+          <select id="target-node"></select>
+        </label>
+        <label class="field">
+          <span>Key</span>
+          <input type="text" id="req-key" placeholder="user:1">
+        </label>
+        <label class="field">
+          <span>Value</span>
+          <input type="text" id="req-value" placeholder="alice">
+        </label>
+        <div class="btn-row">
+          <button id="btn-put" class="btn primary" disabled>Write</button>
+          <button id="btn-get" class="btn secondary" disabled>Read</button>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-failures">
+        <h2>Failure Lab</h2>
+        <p class="hint">Select nodes, then apply an action.</p>
+        <div id="node-actions" class="node-actions"></div>
+        <div class="btn-row">
+          <button id="btn-kill" class="btn danger" disabled>Kill</button>
+          <button id="btn-restart" class="btn secondary" disabled>Restart</button>
+        </div>
+        <div class="partition-box">
+          <span class="field-label">Network partition</span>
+          <div id="partition-nodes" class="partition-nodes"></div>
+          <div class="btn-row">
+            <button id="btn-partition" class="btn danger" disabled>Isolate</button>
+            <button id="btn-clear-partition" class="btn ghost" disabled>Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-tours">
+        <h2>Guided Tours</h2>
+        <select id="tour-select">
+          <option value="">Choose a tour…</option>
+          <option value="visualizer/scenarios/showcase.json">Lifecycle showcase</option>
+          <option value="visualizer/scenarios/election.json">Leader election</option>
+          <option value="visualizer/scenarios/failure.json">Leader failure</option>
+          <option value="visualizer/scenarios/partition.json">Network partition</option>
+          <option value="visualizer/scenarios/persistence.json">Persistence</option>
+        </select>
+        <div class="btn-row">
+          <button id="btn-tour-load" class="btn secondary">Load</button>
+          <button id="btn-tour-run" class="btn primary" disabled>Run</button>
+          <button id="btn-tour-pause" class="btn ghost" disabled>Pause</button>
+        </div>
+      </section>
+
+      <section class="panel panel-log">
+        <h2>Event Log</h2>
+        <div id="event-log" class="event-log"></div>
+      </section>
+    </aside>
+
+    <main id="canvas-area">
+      <div id="hud">
+        <div class="hud-metric">
+          <span class="label">Term</span>
+          <span id="hud-term" class="value">—</span>
+        </div>
+        <div class="hud-metric">
+          <span class="label">Commit</span>
+          <span id="hud-commit" class="value">—</span>
+        </div>
+        <div class="hud-metric">
+          <span class="label">Quorum</span>
+          <span id="hud-quorum" class="value">—</span>
+        </div>
+        <div class="hud-metric">
+          <span class="label">Leader</span>
+          <span id="hud-leader" class="value">—</span>
+        </div>
+        <div id="quorum-bar"><div id="quorum-fill"></div></div>
       </div>
-    </div>
 
-    <div id="viz-wrap">
-      <svg id="viz" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <linearGradient id="entryGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#64748b"/>
-          <stop offset="100%" stop-color="#475569"/>
-        </linearGradient>
-        <linearGradient id="committedGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#34d399"/>
-          <stop offset="100%" stop-color="#10b981"/>
-        </linearGradient>
-      </defs>
-      <!-- z: beams → nodes (machine+log) → flow → client → fx -->
-      <g id="layer-beams"></g>
-      <g id="layer-nodes"></g>
-      <g id="layer-flow"></g>
-      <g id="layer-actors"></g>
-      <g id="layer-commit-fx"></g>
-    </svg>
-      <div id="callout" class="callout"></div>
-
-      <div id="scene-card" class="scene-card hidden">
-        <span id="scene-title" class="scene-title"></span>
-        <span id="scene-subtitle" class="scene-subtitle"></span>
+      <div id="viz-wrap">
+        <svg id="viz" viewBox="0 0 1000 680" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="entryGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#64748b"/>
+              <stop offset="100%" stop-color="#475569"/>
+            </linearGradient>
+            <linearGradient id="committedGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#95d5b2"/>
+              <stop offset="100%" stop-color="#52b788"/>
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g id="layer-beams"></g>
+          <g id="layer-nodes"></g>
+          <g id="layer-flow"></g>
+          <g id="layer-actors"></g>
+          <g id="layer-fx"></g>
+        </svg>
+        <div id="callout" class="callout hidden"></div>
       </div>
-
-      <div id="showcase-timeline" class="showcase-timeline hidden">
-        <div id="showcase-progress"></div>
-      </div>
-
-    </div>
+    </main>
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

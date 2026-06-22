@@ -1,0 +1,20 @@
+{
+  "name": "Log Persistence",
+  "nodes": 5,
+  "steps": [
+    { "wait": "2s" },
+    { "put": { "node": "node2", "key": "persist:1", "value": "alpha" } },
+    { "put": { "node": "node4", "key": "persist:2", "value": "beta" } },
+    { "put": { "node": "node5", "key": "persist:3", "value": "gamma" } },
+    { "wait": "2s" },
+    { "kill": "node1" },
+    { "wait": "500ms" },
+    { "restart": "node1" },
+    { "wait": "2s" },
+    { "kill": "node3" },
+    { "wait": "500ms" },
+    { "restart": "node3" },
+    { "wait": "2s" },
+    { "get": { "node": "node1", "key": "persist:3", "expect": "gamma" } }
+  ]
+}

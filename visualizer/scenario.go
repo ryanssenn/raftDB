@@ -19,13 +19,19 @@ type GetStep struct {
 	Expect string `json:"expect,omitempty"`
 }
 
+type PartitionStep struct {
+	Isolated []string `json:"isolated"`
+}
+
 type Step struct {
-	Wait    string   `json:"wait,omitempty"`
-	Comment string   `json:"comment,omitempty"`
-	Kill    string   `json:"kill,omitempty"`
-	Restart string   `json:"restart,omitempty"`
-	Put     *PutStep `json:"put,omitempty"`
-	Get     *GetStep `json:"get,omitempty"`
+	Wait           string         `json:"wait,omitempty"`
+	Comment        string         `json:"comment,omitempty"`
+	Kill           string         `json:"kill,omitempty"`
+	Restart        string         `json:"restart,omitempty"`
+	ClearPartition bool           `json:"clear_partition,omitempty"`
+	Put            *PutStep       `json:"put,omitempty"`
+	Get            *GetStep       `json:"get,omitempty"`
+	Partition      *PartitionStep `json:"partition,omitempty"`
 }
 
 type Scenario struct {
@@ -84,6 +90,12 @@ func validateStep(s Step, nodeCount int) error {
 		kinds++
 	}
 	if s.Get != nil {
+		kinds++
+	}
+	if s.Partition != nil {
+		kinds++
+	}
+	if s.ClearPartition {
 		kinds++
 	}
 	if kinds != 1 {
@@ -146,8 +158,36 @@ func (s *Step) Description() string {
 		return fmt.Sprintf("put %s=%s → %s", s.Put.Key, s.Put.Value, s.Put.Node)
 	case s.Get != nil:
 		return fmt.Sprintf("get %s from %s", s.Get.Key, s.Get.Node)
+	case s.Partition != nil:
+		return fmt.Sprintf("partition isolate %v", s.Partition.Isolated)
+	case s.ClearPartition:
+		return "clear partition"
 	default:
 		return "unknown step"
+	}
+}
+
+func (srv *Server) runScenarioControlled() {
+	srv.runScenario()
+}
+
+func (srv *Server) waitIfPaused() bool {
+	for {
+		srv.mu.RLock()
+		paused := srv.scenarioPaused
+		stop := srv.scenarioStop
+		srv.mu.RUnlock()
+		if stop != nil {
+			select {
+			case <-stop:
+				return false
+			default:
+			}
+		}
+		if !paused {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -175,6 +215,9 @@ func (srv *Server) runScenario() {
 
 		failed := false
 		for i, step := range srv.scenario.Steps {
+			if !srv.waitIfPaused() {
+				return
+			}
 			srv.mu.Lock()
 			srv.stepIndex = i
 			srv.currentDesc = step.Description()
@@ -310,7 +353,7 @@ func (srv *Server) executeStep(step Step) error {
 				"write",
 			)
 		}
-		result, err := doPut(node.Port, step.Put.Key, step.Put.Value)
+		result, err := doPut(node.Port, step.Put.Key, step.Put.Value, "client")
 		if err != nil {
 			return srv.continueOnClientError(err, "write")
 		}
@@ -329,7 +372,7 @@ func (srv *Server) executeStep(step Step) error {
 				"read",
 			)
 		}
-		result, err := doGet(node.Port, step.Get.Key)
+		result, err := doGet(node.Port, step.Get.Key, "client")
 		if err != nil {
 			return srv.continueOnClientError(err, "read")
 		}
@@ -340,6 +383,28 @@ func (srv *Server) executeStep(step Step) error {
 				"read",
 			)
 		}
+		return nil
+
+	case step.Partition != nil:
+		srv.appendLog(fmt.Sprintf("partition: isolate %v", step.Partition.Isolated))
+		if err := srv.cluster.SetPartition(step.Partition.Isolated); err != nil {
+			return err
+		}
+		srv.mu.Lock()
+		srv.partitionActive = len(step.Partition.Isolated) > 0
+		srv.partitionNodes = append([]string(nil), step.Partition.Isolated...)
+		srv.mu.Unlock()
+		return nil
+
+	case step.ClearPartition:
+		srv.appendLog("clear partition")
+		if err := srv.cluster.ClearPartition(); err != nil {
+			return err
+		}
+		srv.mu.Lock()
+		srv.partitionActive = false
+		srv.partitionNodes = nil
+		srv.mu.Unlock()
 		return nil
 
 	default:
@@ -361,11 +426,4 @@ func (srv *Server) currentLeaderID() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no leader found")
-}
-
-func (srv *Server) appendLog(line string) {
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	ts := time.Now().Format("15:04:05")
-	srv.scenarioLog = append(srv.scenarioLog, fmt.Sprintf("[%s] %s", ts, line))
 }
