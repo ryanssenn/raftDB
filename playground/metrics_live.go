@@ -34,6 +34,8 @@ type liveMetricsResponse struct {
 	MaxReplicationLag float64        `json:"maxReplicationLag"`
 	ElectionRate      float64        `json:"electionRate"`
 	FailoverMs        *float64       `json:"failoverMs"`
+	ClientSendRate    float64        `json:"clientSendRate"`
+	ClientSuccessRate float64        `json:"clientSuccessRate"`
 	History           metricsHistory `json:"history"`
 }
 
@@ -106,6 +108,13 @@ func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
 	srv.appendHistory(&srv.metricsHistory, now,
 		resp.WriteOpsSec, resp.ReadOpsSec, resp.WriteP99Ms, resp.ReadP99Ms,
 		resp.CommitRate, resp.MaxReplicationLag)
+
+	load := srv.loadStatsSnapshot()
+	if load.Active {
+		resp.ClientSendRate = load.SendRate
+		resp.ClientSuccessRate = load.SuccessRate
+	}
+
 	resp.History = srv.metricsHistory
 	srv.metricsMu.Unlock()
 

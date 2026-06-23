@@ -94,7 +94,7 @@ Write latency at concurrency 1 dropped from ~11 ms (fsync-dominated floor) to ~2
 | Write throughput | 149 → 144 | 2,827 → 2,696 | 18,698 → 18,813 |
 | Write p99 (ms) | 10.57 → 12.88 | 11.44 → **9.85** | 13.37 → **8.15** |
 
-**Verdict:** No consistent improvement (within run-to-run variance). Flag kept as an optional operational knob for deployments that do not need the observatory, but not counted as a performance win.
+**Verdict:** No consistent improvement (within run-to-run variance). Flag kept as an optional operational knob for deployments that do not need the playground, but not counted as a performance win.
 
 ---
 

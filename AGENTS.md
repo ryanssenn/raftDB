@@ -11,20 +11,20 @@ Standard commands (see `README.md`, `monitoring/README.md`, and `.github/workflo
 - Lint: no linter configured; use `go vet ./...`
 - Unit tests: `go test -race -count=1 -timeout 5m ./core`
 - Integration tests: `go test -count=1 -timeout 10m -v ./test` (CI uses `-count=3`; these build the binary and spin up a real 5-node cluster over HTTP 8001-8005 / gRPC 9001-9005)
-- Observatory tests: `go test -count=1 -timeout 5m ./observatory/...`
+- Playground tests: `go test -count=1 -timeout 5m ./playground/...`
 
-**Primary workflow: observatory (requires Docker Desktop for Prometheus)**
+**Primary workflow: playground (requires Docker Desktop for Prometheus)**
 
 ```bash
-go run ./observatory
+go run ./playground
 ```
 
-Auto-starts Prometheus and opens the browser at `:8080`. Click **Start Demo** to launch the cluster and run `full-demo.json`. Use `--bootstrap` to auto-start the cluster on launch, or `--no-compose` / `--no-browser` for CI/tests.
+Auto-starts Prometheus and opens the browser at `:8080`. Click **Run stress test** to launch the cluster and run `full-demo.json`. Use `--bootstrap` to auto-start the cluster on launch, or `--no-compose` / `--no-browser` for CI/tests.
 
-Observatory exposes `/api/metrics/live` (PromQL-backed throughput, latency, lag, failover) and proxies `/prometheus/` for debugging. Node metrics on `:8001+`; cluster metrics on `:8080/metrics`. See `docs/observability.md` and `monitoring/README.md`.
+The playground exposes `/api/metrics/live` (PromQL-backed throughput, latency, lag, failover) and proxies `/prometheus/` for debugging. Node metrics on `:8001+`; cluster metrics on `:8080/metrics`. See `docs/observability.md` and `monitoring/README.md`.
 
 Running a cluster manually: each node needs a free HTTP port (`--port`, e.g. 8001+) and a gRPC port from `--peers` (9001+). A majority of nodes must be up to commit writes; start ≥3. Example:
 `./ryanDB --id=node1 --port=8001 --peers=node1=127.0.0.1:9001,node2=127.0.0.1:9002,node3=127.0.0.1:9003 --reset=true`
 Use `--reset=false` on restarts to keep persisted logs. HTTP API: `GET /put?key=&value=`, `GET /get?key=`, `GET /status`, `GET /metrics`.
 
-Observatory gotchas: it calls `harness.KillPorts` on 8001-8005/9001-9005 at cluster create/start, so do not run it alongside a manually started cluster on those ports.
+Playground gotchas: it calls `harness.KillPorts` on 8001-8005/9001-9005 at cluster create/start, so do not run it alongside a manually started cluster on those ports.

@@ -1,7 +1,7 @@
 {
-  "uid": "raft-observatory",
-  "title": "Raft Observatory",
-  "tags": ["raft", "observatory"],
+  "uid": "raft-playground",
+  "title": "ryanDB",
+  "tags": ["raft", "playground"],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,

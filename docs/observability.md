@@ -8,12 +8,12 @@ Reference for metrics, PromQL queries, Grafana panels, and alerts when monitorin
 flowchart LR
   Scenarios[Scenario runner] --> Nodes[ryanDB nodes]
   Nodes -->|"/metrics"| Prom[Prometheus]
-  Observatory[Observatory :8080] -->|cluster metrics| Prom
+  Playground[Playground :8080] -->|cluster metrics| Prom
   Prom --> Graf[Grafana :3000]
   Scenarios -->|annotations| Graf
 ```
 
-Each node exposes Prometheus metrics at `/metrics`. The observatory aggregates cluster-level metrics and drives scenario load. Grafana is the primary visualization surface.
+Each node exposes Prometheus metrics at `/metrics`. The playground aggregates cluster-level metrics and drives scenario load. Grafana is optional.
 
 ---
 
@@ -50,10 +50,10 @@ raftdb_commit_index - raftdb_last_applied
 
 | Metric | Type | Labels | Source | Visualization |
 |---|---|---|---|---|
-| `raftdb_replication_lag` | Gauge | `node` | Observatory | Line; spikes during load or partition |
-| `raftdb_leader_count` | Gauge | — | Observatory | Stat; alert when `!= 1` |
-| `raftdb_cluster_nodes` | Gauge | — | Observatory | Configured cluster size |
-| `raftdb_nodes_running` | Gauge | — | Observatory | Processes currently up |
+| `raftdb_replication_lag` | Gauge | `node` | Playground | Line; spikes during load or partition |
+| `raftdb_leader_count` | Gauge | - | Playground | Stat; alert when `!= 1` |
+| `raftdb_cluster_nodes` | Gauge | - | Playground | Configured cluster size |
+| `raftdb_nodes_running` | Gauge | - | Playground | Processes currently up |
 
 **Useful PromQL**
 
@@ -135,7 +135,7 @@ histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_se
 
 - **Scenario step** — `raftdb_scenario_step`
 - **Scenario running** — `raftdb_scenario_running`
-- **Annotations** — kill, partition, load bursts marked by observatory
+- **Annotations**: kill, partition, load bursts marked by the playground
 
 ### Row 5: Node table
 
@@ -177,14 +177,14 @@ histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_se
 **Prerequisite:** Docker Desktop must be running.
 
 ```bash
-go run ./observatory
+go run ./playground
 ```
 
-Single command: starts Prometheus, boots a 5-node cluster, runs `full-demo.json`, opens the browser with native metrics charts.
+Single command: starts Prometheus, boots a 5-node cluster, runs `full-demo.json`, opens the browser with metrics charts.
 
 Live metrics API: `GET /api/metrics/live` (write/read throughput, p99 latency, replication lag, failover ms).
 
-- Observatory UI: http://localhost:8080
+- Demo UI: http://localhost:8080
 - Prometheus (proxied): http://localhost:8080/prometheus/
 
 Disable per-node metrics when running ryanDB manually: `--metrics=false`.

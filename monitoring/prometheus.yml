@@ -9,9 +9,9 @@ scrape_configs:
           - /etc/prometheus/targets.json
         refresh_interval: 5s
 
-  - job_name: observatory
+  - job_name: playground
     static_configs:
       - targets:
           - host.docker.internal:8080
         labels:
-          cluster: observatory
+          cluster: playground

@@ -10,6 +10,7 @@ import (
 type readyChecks struct {
 	Compose    string `json:"compose"`
 	Prometheus string `json:"prometheus"`
+	Grafana    string `json:"grafana"`
 	Cluster    string `json:"cluster"`
 	Leader     string `json:"leader"`
 	Targets    string `json:"targets"`
@@ -24,6 +25,7 @@ func (srv *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	checks := readyChecks{
 		Compose:    "skipped",
 		Prometheus: "skipped",
+		Grafana:    "skipped",
 		Cluster:    "pending",
 		Leader:     "pending",
 		Targets:    "pending",
@@ -35,6 +37,11 @@ func (srv *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 			checks.Prometheus = "ok"
 		} else {
 			checks.Prometheus = "pending"
+		}
+		if grafanaReady() {
+			checks.Grafana = "ok"
+		} else {
+			checks.Grafana = "pending"
 		}
 	}
 
@@ -77,7 +84,7 @@ func (srv *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 	ready := true
 	if srv.composeEnabled {
-		ready = checks.Prometheus == "ok"
+		ready = checks.Prometheus == "ok" && checks.Grafana == "ok"
 	}
 
 	json.NewEncoder(w).Encode(readyResponse{Ready: ready, Checks: checks})

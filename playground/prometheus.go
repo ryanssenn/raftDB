@@ -18,7 +18,7 @@ func writePrometheusTargets(repoRoot string, nodeCount int) error {
 	}
 	group := []targetGroup{{
 		Targets: targets,
-		Labels:  map[string]string{"cluster": "observatory"},
+		Labels:  map[string]string{"cluster": "playground"},
 	}}
 	data, err := json.MarshalIndent(group, "", "  ")
 	if err != nil {

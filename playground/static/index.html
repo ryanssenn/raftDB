@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ryanDB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p id="loading-status">Connecting…</p>
+      <ul id="ready-checks" class="ready-checks"></ul>
+    </div>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <header class="sidebar-brand">
+        <span id="live-dot" class="live-dot"></span>
+        <div>
+          <h1>ryanDB</h1>
+          <p id="sidebar-status" class="sidebar-status">Starting…</p>
+        </div>
+      </header>
+
+      <button id="btn-stress-test" class="btn-primary" type="button">Run stress test</button>
+
+      <div class="run-progress">
+        <div class="progress-bar"><div id="scenario-progress" class="progress-fill"></div></div>
+        <p id="scenario-step" class="scenario-step">Idle</p>
+      </div>
+
+      <details class="advanced">
+        <summary>Manual control</summary>
+        <div class="advanced-body">
+          <label class="field">
+            <span>Nodes</span>
+            <div class="segmented" id="node-segments">
+              <button type="button" data-n="3">3</button>
+              <button type="button" data-n="5" class="active">5</button>
+              <button type="button" data-n="7">7</button>
+              <button type="button" data-n="9">9</button>
+            </div>
+          </label>
+          <div class="btn-row">
+            <button id="btn-create" class="btn">Configure</button>
+            <button id="btn-start" class="btn">Start</button>
+            <button id="btn-stop" class="btn danger" disabled>Stop</button>
+          </div>
+          <label class="field">
+            <span>Scenario</span>
+            <select id="scenario-select">
+              <option value="playground/scenarios/full-demo.json">Full stress test</option>
+              <option value="playground/scenarios/steady-writes.json">Steady writes</option>
+              <option value="playground/scenarios/leader-failure.json">Leader failure</option>
+            </select>
+          </label>
+          <div class="btn-row">
+            <button id="btn-load" class="btn">Load</button>
+            <button id="btn-run" class="btn" disabled>Run</button>
+            <button id="btn-pause" class="btn ghost" disabled>Pause</button>
+          </div>
+          <a class="link" href="/prometheus/targets" target="_blank" rel="noopener">Prometheus</a>
+          <a class="link" href="http://localhost:3000/d/playground-live/playground-live?kiosk" target="_blank" rel="noopener">Grafana</a>
+        </div>
+      </details>
+
+      <footer class="sidebar-footer">
+        <button id="btn-quit" class="btn-quit" type="button">Stop &amp; quit</button>
+        <p class="sidebar-hint">Or press <kbd>Ctrl+C</kbd> in the terminal</p>
+      </footer>
+    </aside>
+
+    <main class="main">
+      <section class="topology-section">
+        <header class="section-head">
+          <div class="section-head-left">
+            <span id="phase-banner" class="phase-label hidden"></span>
+            <span id="partition-badge" class="badge hidden">partition</span>
+          </div>
+          <span id="topology-stats" class="topology-stats"></span>
+        </header>
+        <p id="node-hint" class="node-hint hidden">Each node has a <strong>Stop node</strong> button — use it to simulate a crash. Stopped nodes show <strong>Start node</strong> to recover.</p>
+        <div class="topology-canvas" id="topology-canvas">
+          <div id="hero-rate" class="hero-rate hidden">
+            <span id="client-rate-value" class="hero-rate-value">0</span>
+            <span class="hero-rate-unit">req/s</span>
+            <span id="client-rate-sub" class="hero-rate-sub"></span>
+          </div>
+          <div id="topology-idle" class="topology-idle">
+            <p class="idle-copy">Run stress test to start a 5-node cluster with concurrent writes and node failures.</p>
+          </div>
+          <svg id="topology-svg" preserveAspectRatio="none">
+            <rect width="100%" height="100%" fill="#0c0c0e"/>
+            <g id="layer-beams"></g>
+          </svg>
+          <div id="topology-html" class="topology-html">
+            <div id="fx-layer" class="fx-layer"></div>
+            <div id="client-widget" class="client-widget">
+              <span class="client-label">Client</span>
+              <span class="client-pulse"></span>
+            </div>
+            <div id="node-layer" class="node-layer"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="charts-section">
+        <div class="charts-head">
+          <div class="stats-row">
+            <span>Write <strong id="stat-write-ops">—</strong></span>
+            <span>Read <strong id="stat-read-ops">—</strong></span>
+            <span>W p99 <strong id="stat-write-p99">—</strong></span>
+            <span>R p99 <strong id="stat-read-p99">—</strong></span>
+            <span>Lag <strong id="stat-lag">—</strong></span>
+            <span>Failover <strong id="stat-failover">—</strong></span>
+          </div>
+          <a class="charts-link" id="grafana-open-link" href="http://localhost:3000/d/playground-live/playground-live?kiosk" target="_blank" rel="noopener">Open in Grafana</a>
+        </div>
+        <div id="grafana-panels" class="grafana-grid hidden"></div>
+        <p id="grafana-fallback" class="grafana-fallback hidden">
+          Grafana charts need Docker. Run without <code>--no-compose</code>, or start the stack manually:
+          <code>docker compose -f monitoring/docker-compose.yml up -d</code>
+        </p>
+      </section>
+
+      <section class="log-section">
+        <div id="event-log" class="event-log"></div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 // Package harness holds shared helpers for starting clusters in tests,
-// benchmarks, and the observatory.
+// benchmarks, and the playground.
 package harness
 
 import (

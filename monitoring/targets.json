@@ -8,7 +8,7 @@
       "host.docker.internal:8005"
     ],
     "labels": {
-      "cluster": "observatory"
+      "cluster": "playground"
     }
   }
 ]

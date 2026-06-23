@@ -35,7 +35,7 @@ func (srv *Server) bootstrapCluster(scenarioPath string, demoPace bool) error {
 	srv.mu.Lock()
 	srv.clusterStarted = true
 	srv.appendLog(fmt.Sprintf("cluster started (%d nodes)", scenario.Nodes))
-	srv.appendLog("scenario loaded: " + scenario.Name + " (click Start Demo to run)")
+	srv.appendLog("scenario loaded: " + scenario.Name + " (click Run stress test)")
 	srv.mu.Unlock()
 
 	return nil

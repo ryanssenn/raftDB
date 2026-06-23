@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var observatoryHTTPClient = &http.Client{Timeout: 3 * time.Second}
+var playgroundHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
 type NodeStatus struct {
 	ID           string           `json:"id"`
@@ -26,7 +26,7 @@ type NodeStatus struct {
 }
 
 func fetchStatus(port string) (*NodeStatus, error) {
-	resp, err := observatoryHTTPClient.Get("http://localhost:" + port + "/status")
+	resp, err := playgroundHTTPClient.Get("http://localhost:" + port + "/status")
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func doPut(port, key, value, client string) (string, error) {
 	if client != "" {
 		params.Set("client", client)
 	}
-	resp, err := observatoryHTTPClient.Get("http://localhost:" + port + "/put?" + params.Encode())
+	resp, err := playgroundHTTPClient.Get("http://localhost:" + port + "/put?" + params.Encode())
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +65,7 @@ func doGet(port, key, client string) (string, error) {
 	if client != "" {
 		params.Set("client", client)
 	}
-	resp, err := observatoryHTTPClient.Get("http://localhost:" + port + "/get?" + params.Encode())
+	resp, err := playgroundHTTPClient.Get("http://localhost:" + port + "/get?" + params.Encode())
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func blockPeer(port, peer string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := observatoryHTTPClient.Do(req)
+	resp, err := playgroundHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func unblockAll(port string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := observatoryHTTPClient.Do(req)
+	resp, err := playgroundHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

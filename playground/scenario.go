@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,9 +21,10 @@ type GetStep struct {
 }
 
 type LoadStep struct {
-	Duration  string `json:"duration"`
-	Interval  string `json:"interval"`
-	KeyPrefix string `json:"keyPrefix"`
+	Duration    string `json:"duration"`
+	Interval    string `json:"interval,omitempty"`
+	KeyPrefix   string `json:"keyPrefix"`
+	Concurrency int    `json:"concurrency,omitempty"`
 }
 
 type PartitionStep struct {
@@ -140,8 +142,13 @@ func validateStep(s Step, nodeCount int) error {
 		if _, err := time.ParseDuration(s.Load.Duration); err != nil {
 			return fmt.Errorf("load duration: %w", err)
 		}
-		if _, err := time.ParseDuration(s.Load.Interval); err != nil {
-			return fmt.Errorf("load interval: %w", err)
+		if s.Load.Concurrency <= 0 {
+			if s.Load.Interval == "" {
+				return fmt.Errorf("load requires concurrency or interval")
+			}
+			if _, err := time.ParseDuration(s.Load.Interval); err != nil {
+				return fmt.Errorf("load interval: %w", err)
+			}
 		}
 	}
 	return nil
@@ -182,6 +189,12 @@ func (s *Step) Description() string {
 	case s.ClearPartition:
 		return "clear partition"
 	case s.Load != nil:
+		if s.Load.Concurrency > 0 {
+			if s.Comment != "" {
+				return fmt.Sprintf("load %s × %d workers: %s", s.Load.Duration, s.Load.Concurrency, s.Comment)
+			}
+			return fmt.Sprintf("load %s × %d workers", s.Load.Duration, s.Load.Concurrency)
+		}
 		if s.Comment != "" {
 			return fmt.Sprintf("load %s @ %s: %s", s.Load.Duration, s.Load.Interval, s.Comment)
 		}
@@ -438,46 +451,10 @@ func (srv *Server) executeStep(step Step) error {
 		return nil
 
 	case step.Load != nil:
-		duration, err := time.ParseDuration(step.Load.Duration)
-		if err != nil {
-			return err
+		if step.Load.Concurrency > 0 {
+			return srv.runConcurrentLoad(*step.Load)
 		}
-		interval, err := time.ParseDuration(step.Load.Interval)
-		if err != nil {
-			return err
-		}
-		prefix := step.Load.KeyPrefix
-		if prefix == "" {
-			prefix = "key"
-		}
-		nodeCount := len(srv.cluster.Nodes)
-		srv.appendLog(fmt.Sprintf("load %s @ %s (prefix %s)", step.Load.Duration, step.Load.Interval, prefix))
-		deadline := time.Now().Add(duration)
-		tick := 0
-		for time.Now().Before(deadline) {
-			if !srv.waitIfPaused() {
-				return nil
-			}
-			nodeID := fmt.Sprintf("node%d", (tick%nodeCount)+1)
-			key := fmt.Sprintf("%s:%d", prefix, tick+1)
-			node := srv.cluster.NodeByID(nodeID)
-			if node != nil && node.Running {
-				result, err := doPut(node.Port, key, fmt.Sprintf("v%d", tick+1), "client")
-				if err != nil {
-					_ = srv.continueOnClientError(err, "write")
-				} else {
-					srv.recordWrite(nodeID, key)
-					if tick%10 == 0 {
-						srv.appendLog(fmt.Sprintf("  → %s on %s", result, nodeID))
-					}
-				}
-			}
-			tick++
-			if !srv.sleepLoadInterval(interval) {
-				return nil
-			}
-		}
-		return nil
+		return srv.runSequentialLoad(*step.Load)
 
 	default:
 		return fmt.Errorf("empty step")
@@ -485,10 +462,10 @@ func (srv *Server) executeStep(step Step) error {
 }
 
 func (srv *Server) recordWrite(to, key string) {
+	atomic.AddInt64(&srv.writeCount, 1)
 	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	srv.writeCount++
 	srv.lastWrite = WriteEvent{From: "client", To: to, Key: key}
+	srv.mu.Unlock()
 }
 
 func (srv *Server) sleepLoadInterval(d time.Duration) bool {

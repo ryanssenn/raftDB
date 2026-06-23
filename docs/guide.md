@@ -1,6 +1,6 @@
 # RaftDB Internals Guide
 
-This guide explains what Raft is, how this project implements it, and how to read the Go source. For hands-on exploration, start with the [observatory](observability.md) (`go run ./observatory`; requires Docker Desktop).
+This guide explains what Raft is, how this project implements it, and how to read the Go source. For hands-on exploration, start with the [demo UI](observability.md) (`go run ./playground`; requires Docker Desktop).
 
 RaftDB is a learning project: it runs a real multi-node cluster, but it is not a production database.
 
@@ -161,19 +161,19 @@ Read in this order the first time you walk through the source. Allow 30–45 min
 6. **`core/node_test.go`**: Short tests that show commit/apply and voting rules in isolation.
 7. **`test/integration_test.go`**: Full cluster scenarios: election, replication, persistence, partitions.
 
-Optional after that: the [observatory](observability.md) for live metrics during scenario runs, and `benchmarks/` for throughput and latency numbers.
+Optional after that: the [demo UI](observability.md) for metrics during scenario runs, and `benchmarks/` for throughput and latency numbers.
 
 ---
 
 ## How to explore
 
-**Observatory (recommended).**
+**Demo UI (recommended).**
 
 ```bash
-go run ./observatory observatory/scenarios/leader-failure.json
+go run ./playground playground/scenarios/leader-failure.json
 ```
 
-Run scenarios against a real cluster and watch Raft metrics in Grafana. See [observability.md](observability.md).
+Run scenarios against a real cluster and watch Raft metrics. See [observability.md](observability.md).
 
 **Run a cluster manually.** Build and start three nodes as shown in the [README](../README.md). Send writes to any node; reads and writes reach the leader automatically.
 
@@ -192,10 +192,10 @@ go test -v ./core
 **Scenario-driven demo.**
 
 ```bash
-go run ./observatory observatory/scenarios/steady-writes.json
+go run ./playground playground/scenarios/steady-writes.json
 ```
 
-Auto-starts a cluster and runs the scenario. See [observatory/README.md](../observatory/README.md) for other scenarios.
+Auto-starts a cluster and runs the scenario. See [playground/README.md](../playground/README.md) for other scenarios.
 
 ---
 

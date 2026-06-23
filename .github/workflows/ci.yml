@@ -34,5 +34,5 @@ jobs:
       - name: Run integration tests
         run: go test -count=3 -timeout 10m -v ./test
 
-      - name: Run observatory tests
-        run: go test -count=1 -timeout 5m ./observatory/...
+      - name: Run playground tests
+        run: go test -count=1 -timeout 5m ./playground/...

@@ -16,7 +16,7 @@ import (
 	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
-func TestObservatoryAPI(t *testing.T) {
+func TestPlaygroundAPI(t *testing.T) {
 	repoRoot := findRepoRoot()
 	binaryPath := filepath.Join(repoRoot, "ryanDB")
 	build := exec.Command("go", "build", "-o", binaryPath, ".")
@@ -87,7 +87,7 @@ func TestObservatoryAPI(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	path := filepath.Join(repoRoot, "observatory", "scenarios", "steady-writes.json")
+	path := filepath.Join(repoRoot, "playground", "scenarios", "steady-writes.json")
 	resp, err = post("/api/scenario/load", map[string]string{"path": path})
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestMetricsLiveEndpoint(t *testing.T) {
 
 func TestLoadScenarioPaths(t *testing.T) {
 	root := findRepoRoot()
-	path := filepath.Join(root, "observatory", "scenarios", "leader-failure.json")
+	path := filepath.Join(root, "playground", "scenarios", "leader-failure.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Skip("scenario file not found")
 	}
@@ -197,7 +197,7 @@ func TestLoadScenarioPaths(t *testing.T) {
 
 func TestFullDemoScenario(t *testing.T) {
 	root := findRepoRoot()
-	path := filepath.Join(root, "observatory", "scenarios", "full-demo.json")
+	path := filepath.Join(root, "playground", "scenarios", "full-demo.json")
 	sc, err := LoadScenario(path)
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +215,7 @@ func TestFullDemoScenario(t *testing.T) {
 
 func TestLoadStepValidation(t *testing.T) {
 	root := findRepoRoot()
-	path := filepath.Join(root, "observatory", "scenarios", "full-demo.json")
+	path := filepath.Join(root, "playground", "scenarios", "full-demo.json")
 	sc, err := LoadScenario(path)
 	if err != nil {
 		t.Fatal(err)
@@ -252,7 +252,7 @@ func TestCompressWaitSkippedForRealtime(t *testing.T) {
 }
 
 func TestResolveScenarioPath(t *testing.T) {
-	p := resolveScenarioPath("observatory/scenarios/election.json")
+	p := resolveScenarioPath("playground/scenarios/election.json")
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("resolved path missing: %s (%v)", p, err)
 	}
