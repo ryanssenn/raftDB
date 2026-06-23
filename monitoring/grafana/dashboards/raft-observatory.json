@@ -4,7 +4,7 @@
   "tags": ["raft", "observatory"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": { "from": "now-5m", "to": "now" },
   "panels": [
@@ -12,8 +12,9 @@
       "id": 1,
       "title": "Leader count",
       "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "targets": [{ "expr": "raftdb_leader_count", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_leader_count", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -30,109 +31,59 @@
       "id": 2,
       "title": "Current term",
       "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "targets": [{ "expr": "max(raftdb_term)", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(raftdb_term)", "refId": "A" }]
     },
     {
       "id": 3,
       "title": "Nodes running",
       "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-      "targets": [{ "expr": "raftdb_nodes_running", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_nodes_running", "refId": "A" }]
     },
     {
       "id": 4,
       "title": "Commit spread",
       "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "targets": [{ "expr": "max(raftdb_commit_index) - min(raftdb_commit_index)", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(raftdb_commit_index) - min(raftdb_commit_index)", "refId": "A" }]
     },
     {
       "id": 5,
       "title": "Commit index by node",
       "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
-      "targets": [{ "expr": "raftdb_commit_index", "legendFormat": "{{node}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_commit_index", "legendFormat": "{{node}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2 } } }
     },
     {
       "id": 6,
       "title": "Replication lag by node",
       "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "targets": [{ "expr": "raftdb_replication_lag", "legendFormat": "{{node}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2 } } }
-    },
-    {
-      "id": 7,
-      "title": "Apply lag by node",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "targets": [{ "expr": "raftdb_apply_lag", "legendFormat": "{{node}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2 } } }
-    },
-    {
-      "id": 8,
-      "title": "Raft term by node",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "targets": [{ "expr": "raftdb_term", "legendFormat": "{{node}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_replication_lag", "legendFormat": "{{node}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2 } } }
     },
     {
       "id": 9,
       "title": "Election rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
-      "targets": [{ "expr": "sum(rate(raftdb_elections_total[1m]))", "legendFormat": "elections/s", "refId": "A" }]
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(raftdb_elections_total[1m]))", "legendFormat": "elections/s", "refId": "A" }]
     },
     {
       "id": 10,
       "title": "Commit rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
-      "targets": [{ "expr": "sum(rate(raftdb_commits_total[1m]))", "legendFormat": "commits/s", "refId": "A" }]
-    },
-    {
-      "id": 11,
-      "title": "AppendEntries by result",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
-      "targets": [{ "expr": "sum by (result) (rate(raftdb_append_entries_total[1m]))", "legendFormat": "{{result}}", "refId": "A" }]
-    },
-    {
-      "id": 12,
-      "title": "Scenario step",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 28 },
-      "targets": [{ "expr": "max(raftdb_scenario_step)", "refId": "A" }]
-    },
-    {
-      "id": 13,
-      "title": "Scenario running",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 28 },
-      "targets": [{ "expr": "raftdb_scenario_running", "refId": "A" }]
-    },
-    {
-      "id": 14,
-      "title": "Client request rate",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
-      "targets": [{ "expr": "sum by (op) (rate(raftdb_client_requests_total[1m]))", "legendFormat": "{{op}}", "refId": "A" }]
-    },
-    {
-      "id": 15,
-      "title": "Node status",
-      "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
-      "targets": [
-        { "expr": "raftdb_state", "format": "table", "instant": true, "refId": "A" },
-        { "expr": "raftdb_term", "format": "table", "instant": true, "refId": "B" },
-        { "expr": "raftdb_commit_index", "format": "table", "instant": true, "refId": "C" },
-        { "expr": "raftdb_replication_lag", "format": "table", "instant": true, "refId": "D" },
-        { "expr": "up{job=\"ryanDB\"}", "format": "table", "instant": true, "refId": "E" }
-      ]
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(raftdb_commits_total[1m]))", "legendFormat": "commits/s", "refId": "A" }]
     }
   ]
 }

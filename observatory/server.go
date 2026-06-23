@@ -19,12 +19,14 @@ type Server struct {
 	scenario        *Scenario
 	binaryPath      string
 	repoRoot        string
+	composeEnabled  bool
 	clusterStarted  bool
 	demoPace        bool
 	showcaseStart   time.Time
 	cycle           int
 	stepIndex       int
 	currentDesc     string
+	phase           string
 	done            bool
 	err             string
 	scenarioLog     []string
@@ -35,13 +37,26 @@ type Server struct {
 	scenarioDone    chan struct{}
 	partitionActive bool
 	partitionNodes  []string
+	writeCount      int
+	lastWrite       WriteEvent
+	metricsMu           sync.Mutex
+	metricsHistory      metricsHistory
+	failoverStartedAt   *time.Time
+	lastFailoverMs      *float64
 }
 
-func NewServer(binaryPath, repoRoot string) *Server {
+type WriteEvent struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Key  string `json:"key"`
+}
+
+func NewServer(binaryPath, repoRoot string, composeEnabled bool) *Server {
 	return &Server{
-		cluster:    NewCluster(5),
-		binaryPath: binaryPath,
-		repoRoot:   repoRoot,
+		cluster:        NewCluster(5),
+		binaryPath:     binaryPath,
+		repoRoot:       repoRoot,
+		composeEnabled: composeEnabled,
 	}
 }
 
@@ -189,6 +204,9 @@ func (srv *Server) handleScenario(w http.ResponseWriter, r *http.Request) {
 		"stepIndex":   srv.stepIndex,
 		"totalSteps":  len(srv.scenario.Steps),
 		"currentStep": srv.currentDesc,
+		"phase":       srv.phase,
+		"writeCount":  srv.writeCount,
+		"lastWrite":   srv.lastWrite,
 		"done":        srv.done,
 		"error":       srv.err,
 		"running":     srv.scenarioRunning,
@@ -220,8 +238,13 @@ func (srv *Server) handleScenarioLoad(w http.ResponseWriter, r *http.Request) {
 	srv.stepIndex = 0
 	srv.done = false
 	srv.err = ""
+	srv.writeCount = 0
+	srv.lastWrite = WriteEvent{}
 	srv.scenarioRunning = false
 	srv.scenarioPaused = false
+	if scenario.Realtime {
+		srv.demoPace = false
+	}
 	srv.appendLog("loaded scenario: " + scenario.Name)
 	srv.mu.Unlock()
 	json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": scenario.Name})
@@ -309,6 +332,81 @@ func (srv *Server) handleScenarioReset(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
+const fullDemoScenario = "observatory/scenarios/full-demo.json"
+
+func (srv *Server) ensureCluster(nodeCount int) error {
+	srv.mu.RLock()
+	started := srv.clusterStarted
+	binary := srv.binaryPath
+	srv.mu.RUnlock()
+	if started {
+		return nil
+	}
+
+	harness.KillPorts(nodeCount)
+	srv.mu.Lock()
+	srv.cluster = NewCluster(nodeCount)
+	srv.mu.Unlock()
+	_ = writePrometheusTargets(srv.repoRoot, nodeCount)
+
+	if err := srv.cluster.StartAll(binary, true); err != nil {
+		return err
+	}
+
+	srv.mu.Lock()
+	srv.clusterStarted = true
+	srv.appendLog(fmt.Sprintf("cluster started (%d nodes)", nodeCount))
+	srv.mu.Unlock()
+	return nil
+}
+
+func (srv *Server) handleScenarioDemo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	scenario, err := LoadScenario(resolveScenarioPath(fullDemoScenario))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := srv.ensureCluster(scenario.Nodes); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	srv.mu.Lock()
+	if srv.scenarioRunning {
+		srv.mu.Unlock()
+		http.Error(w, "scenario already running", http.StatusConflict)
+		return
+	}
+	srv.scenario = scenario
+	srv.stepIndex = 0
+	srv.done = false
+	srv.err = ""
+	srv.writeCount = 0
+	srv.lastWrite = WriteEvent{}
+	if scenario.Realtime {
+		srv.demoPace = false
+	}
+	srv.scenarioRunning = true
+	srv.scenarioPaused = false
+	srv.scenarioStop = make(chan struct{})
+	srv.scenarioDone = make(chan struct{})
+	srv.appendLog("running demo: " + scenario.Name)
+	srv.mu.Unlock()
+
+	go func() {
+		srv.runScenarioControlled()
+		srv.mu.Lock()
+		srv.scenarioRunning = false
+		close(srv.scenarioDone)
+		srv.mu.Unlock()
+	}()
+
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": scenario.Name})
+}
+
 func resolveScenarioPath(path string) string {
 	if path == "" {
 		return path
@@ -325,8 +423,12 @@ func resolveScenarioPath(path string) string {
 }
 
 func (srv *Server) registerRoutes(mux *http.ServeMux, static http.Handler) {
-	mux.Handle("/", static)
+	registerProxyRoutes(mux)
+	mux.HandleFunc("/api/ready", srv.handleReady)
+	mux.HandleFunc("/api/metrics/live", srv.handleMetricsLive)
 	mux.HandleFunc("/metrics", srv.handleMetrics)
+	mux.HandleFunc("/api/scenario/demo", srv.handleScenarioDemo)
+	mux.Handle("/", static)
 	mux.HandleFunc("/api/cluster/status", srv.handleClusterStatus)
 	mux.HandleFunc("/api/cluster/create", srv.handleClusterCreate)
 	mux.HandleFunc("/api/cluster/start", srv.handleClusterStart)

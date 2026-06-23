@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -11,19 +12,22 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/ryansenn/ryanDB/internal/harness"
 )
 
 //go:embed static/*
 var staticFiles embed.FS
 
+const defaultScenario = "observatory/scenarios/full-demo.json"
+
 func main() {
 	port := flag.Int("port", 8080, "Observatory UI port")
 	noBrowser := flag.Bool("no-browser", false, "skip opening browser")
+	noCompose := flag.Bool("no-compose", false, "do not start Prometheus/Grafana via Docker")
+	bootstrap := flag.Bool("bootstrap", false, "auto-start cluster on launch (demo still waits for Start Demo)")
+	noBootstrap := flag.Bool("no-bootstrap", true, "do not auto-start cluster on launch")
 	binary := flag.String("binary", "", "path to ryanDB binary")
 	demoPace := flag.Bool("demo", true, "compress scenario waits")
-	composeUp := flag.Bool("compose-up", false, "start Prometheus and Grafana via docker compose")
+	scenarioFlag := flag.String("scenario", "", "scenario JSON path (default: steady-writes.json when bootstrapping)")
 	flag.Parse()
 
 	repoRoot := findRepoRoot()
@@ -32,57 +36,17 @@ func main() {
 		log.Fatalf("binary: %v", err)
 	}
 
-	if *composeUp {
-		if err := startCompose(repoRoot); err != nil {
-			log.Printf("warning: %v", err)
-		} else {
-			log.Println("monitoring stack started (Prometheus :9090, Grafana :3000)")
-		}
-	}
+	composeEnabled := !*noCompose
+	srv := NewServer(binaryPath, repoRoot, composeEnabled)
 
-	srv := NewServer(binaryPath, repoRoot)
-
+	scenarioPath := *scenarioFlag
 	if flag.NArg() >= 1 {
-		scenario, err := LoadScenario(flag.Arg(0))
-		if err != nil {
-			log.Fatalf("load scenario: %v", err)
-		}
-		srv.mu.Lock()
-		srv.scenario = scenario
-		srv.demoPace = *demoPace
-		if scenario.Showcase {
-			srv.demoPace = false
-		}
-		srv.mu.Unlock()
-
-		harness.KillPorts(scenario.Nodes)
-		srv.mu.Lock()
-		srv.cluster = NewCluster(scenario.Nodes)
-		srv.mu.Unlock()
-		_ = writePrometheusTargets(repoRoot, scenario.Nodes)
-
-		log.Printf("starting %d-node cluster for scenario...", scenario.Nodes)
-		if scenario.Showcase {
-			srv.mu.Lock()
-			srv.showcaseStart = time.Now()
-			srv.mu.Unlock()
-			if err := srv.cluster.StartStaggered(binaryPath, true, 500*time.Millisecond); err != nil {
-				log.Fatalf("start cluster: %v", err)
-			}
-		} else {
-			if err := srv.cluster.StartAll(binaryPath, true); err != nil {
-				log.Fatalf("start cluster: %v", err)
-			}
-		}
-		srv.mu.Lock()
-		srv.clusterStarted = true
-		srv.appendLog("cluster started (" + fmt.Sprintf("%d", scenario.Nodes) + " nodes)")
-		srv.appendLog("running scenario: " + scenario.Name)
-		srv.mu.Unlock()
-		go srv.runScenario()
-	} else {
-		log.Printf("observatory ready; open UI to configure cluster and run scenarios")
-		srv.appendLog("observatory ready")
+		scenarioPath = flag.Arg(0)
+	}
+	shouldBootstrap := *bootstrap || !*noBootstrap || scenarioPath != ""
+	if !shouldBootstrap {
+		log.Printf("observatory ready; click Start Demo to launch the cluster")
+		srv.appendLog("observatory ready — click Start Demo")
 	}
 
 	static, err := fs.Sub(staticFiles, "static")
@@ -94,17 +58,49 @@ func main() {
 	srv.registerRoutes(mux, http.FileServer(http.FS(static)))
 
 	addr := fmt.Sprintf(":%d", *port)
-	url := "http://localhost" + addr
+	url := fmt.Sprintf("http://localhost:%d", *port)
 
+	server := &http.Server{Addr: addr, Handler: mux}
 	go func() {
 		log.Printf("observatory at %s", url)
-		if err := http.ListenAndServe(addr, mux); err != nil {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server: %v", err)
 		}
 	}()
 
+	time.Sleep(200 * time.Millisecond)
+
 	if !*noBrowser {
 		openBrowser(url)
+	}
+
+	if composeEnabled {
+		go func() {
+			log.Println("starting monitoring stack (requires Docker Desktop)...")
+			if err := startComposeStack(repoRoot); err != nil {
+				log.Printf("monitoring error: %v", err)
+				srv.appendLog("ERROR: monitoring: " + err.Error())
+				return
+			}
+			log.Println("monitoring stack ready (Prometheus :9090)")
+			srv.appendLog("monitoring stack ready")
+		}()
+	}
+
+	if shouldBootstrap {
+		bootstrapPath := scenarioPath
+		if bootstrapPath == "" {
+			bootstrapPath = defaultScenario
+		}
+		go func() {
+			log.Printf("bootstrapping cluster with %s...", bootstrapPath)
+			if err := srv.bootstrapCluster(bootstrapPath, *demoPace); err != nil {
+				log.Printf("bootstrap error: %v", err)
+				srv.appendLog("ERROR: bootstrap: " + err.Error())
+				return
+			}
+			log.Println("cluster bootstrapped")
+		}()
 	}
 
 	sig := make(chan os.Signal, 1)
@@ -113,4 +109,10 @@ func main() {
 
 	log.Println("shutting down...")
 	srv.cluster.StopAll()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = server.Shutdown(ctx)
+	if composeEnabled {
+		stopComposeStack(repoRoot)
+	}
 }

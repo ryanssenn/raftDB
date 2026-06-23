@@ -1,6 +1,6 @@
 # RaftDB Internals Guide
 
-This guide explains what Raft is, how this project implements it, and how to read the Go source. For hands-on exploration, start with the [observatory](observability.md) (`go run ./observatory --no-browser`).
+This guide explains what Raft is, how this project implements it, and how to read the Go source. For hands-on exploration, start with the [observatory](observability.md) (`go run ./observatory`; requires Docker Desktop).
 
 RaftDB is a learning project: it runs a real multi-node cluster, but it is not a production database.
 
@@ -170,7 +170,7 @@ Optional after that: the [observatory](observability.md) for live metrics during
 **Observatory (recommended).**
 
 ```bash
-go run ./observatory --no-browser --compose-up observatory/scenarios/leader-failure.json
+go run ./observatory observatory/scenarios/leader-failure.json
 ```
 
 Run scenarios against a real cluster and watch Raft metrics in Grafana. See [observability.md](observability.md).
@@ -192,7 +192,7 @@ go test -v ./core
 **Scenario-driven demo.**
 
 ```bash
-go run ./observatory --no-browser observatory/scenarios/steady-writes.json
+go run ./observatory observatory/scenarios/steady-writes.json
 ```
 
 Auto-starts a cluster and runs the scenario. See [observatory/README.md](../observatory/README.md) for other scenarios.

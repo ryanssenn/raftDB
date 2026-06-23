@@ -174,17 +174,17 @@ histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_se
 
 ## H. Startup
 
-```bash
-# Terminal 1: observatory + scenario
-go run ./observatory --no-browser --compose-up observatory/scenarios/leader-failure.json
+**Prerequisite:** Docker Desktop must be running.
 
-# Or manually:
-go run ./observatory --no-browser
-docker compose -f monitoring/docker-compose.yml up
+```bash
+go run ./observatory
 ```
 
+Single command: starts Prometheus, boots a 5-node cluster, runs `full-demo.json`, opens the browser with native metrics charts.
+
+Live metrics API: `GET /api/metrics/live` (write/read throughput, p99 latency, replication lag, failover ms).
+
 - Observatory UI: http://localhost:8080
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
+- Prometheus (proxied): http://localhost:8080/prometheus/
 
 Disable per-node metrics when running ryanDB manually: `--metrics=false`.

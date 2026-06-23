@@ -28,7 +28,7 @@ func TestObservatoryAPI(t *testing.T) {
 	harness.KillPorts(3)
 	t.Cleanup(func() { harness.KillPorts(3) })
 
-	srv := NewServer(binaryPath, repoRoot)
+	srv := NewServer(binaryPath, repoRoot, false)
 	srv.cluster = NewCluster(3)
 
 	mux := http.NewServeMux()
@@ -129,6 +129,57 @@ func TestObservatoryAPI(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestReadyEndpoint(t *testing.T) {
+	srv := NewServer("", findRepoRoot(), false)
+	mux := http.NewServeMux()
+	srv.registerRoutes(mux, http.NotFoundHandler())
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Ready  bool              `json:"ready"`
+		Checks map[string]string `json:"checks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Checks["compose"] != "skipped" {
+		t.Fatalf("expected compose skipped, got %q", body.Checks["compose"])
+	}
+	if !body.Ready {
+		t.Fatal("expected ready when compose is disabled")
+	}
+}
+
+func TestMetricsLiveEndpoint(t *testing.T) {
+	srv := NewServer("", findRepoRoot(), false)
+	mux := http.NewServeMux()
+	srv.registerRoutes(mux, http.NotFoundHandler())
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/metrics/live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		WriteOpsSec float64        `json:"writeOpsSec"`
+		History     metricsHistory `json:"history"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.History.WriteOpsSec == nil {
+		t.Fatal("expected history object")
+	}
+}
+
 func TestLoadScenarioPaths(t *testing.T) {
 	root := findRepoRoot()
 	path := filepath.Join(root, "observatory", "scenarios", "leader-failure.json")
@@ -142,6 +193,62 @@ func TestLoadScenarioPaths(t *testing.T) {
 	if sc.Nodes != 5 {
 		t.Fatalf("expected 5 nodes, got %d", sc.Nodes)
 	}
+}
+
+func TestFullDemoScenario(t *testing.T) {
+	root := findRepoRoot()
+	path := filepath.Join(root, "observatory", "scenarios", "full-demo.json")
+	sc, err := LoadScenario(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sc.Realtime {
+		t.Fatal("full-demo should have realtime: true")
+	}
+	if len(sc.Steps) != 11 {
+		t.Fatalf("expected 11 steps, got %d", len(sc.Steps))
+	}
+	if sc.Steps[1].Load == nil {
+		t.Fatal("expected load step at index 1")
+	}
+}
+
+func TestLoadStepValidation(t *testing.T) {
+	root := findRepoRoot()
+	path := filepath.Join(root, "observatory", "scenarios", "full-demo.json")
+	sc, err := LoadScenario(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadSteps := 0
+	for _, step := range sc.Steps {
+		if step.Load != nil {
+			loadSteps++
+			if step.Load.KeyPrefix == "" {
+				t.Fatal("load step missing keyPrefix")
+			}
+		}
+	}
+	if loadSteps != 5 {
+		t.Fatalf("expected 5 load steps, got %d", loadSteps)
+	}
+}
+
+func TestCompressWaitSkippedForRealtime(t *testing.T) {
+	srv := NewServer("", findRepoRoot(), false)
+	srv.demoPace = true
+	srv.scenario = &Scenario{Realtime: true}
+
+	d := 4 * time.Second
+	step := Step{Wait: "4s"}
+	orig := d
+	if srv.demoPace && !srv.scenario.Showcase && !srv.scenario.Realtime {
+		d = compressWait(d)
+	}
+	if d != orig {
+		t.Fatalf("realtime scenario should not compress wait, got %v", d)
+	}
+	_ = step
 }
 
 func TestResolveScenarioPath(t *testing.T) {

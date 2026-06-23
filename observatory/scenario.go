@@ -19,6 +19,12 @@ type GetStep struct {
 	Expect string `json:"expect,omitempty"`
 }
 
+type LoadStep struct {
+	Duration  string `json:"duration"`
+	Interval  string `json:"interval"`
+	KeyPrefix string `json:"keyPrefix"`
+}
+
 type PartitionStep struct {
 	Isolated []string `json:"isolated"`
 }
@@ -32,6 +38,7 @@ type Step struct {
 	Put            *PutStep       `json:"put,omitempty"`
 	Get            *GetStep       `json:"get,omitempty"`
 	Partition      *PartitionStep `json:"partition,omitempty"`
+	Load           *LoadStep      `json:"load,omitempty"`
 }
 
 type Scenario struct {
@@ -39,6 +46,7 @@ type Scenario struct {
 	Nodes      int     `json:"nodes"`
 	Steps      []Step  `json:"steps"`
 	Showcase   bool    `json:"showcase,omitempty"`
+	Realtime   bool    `json:"realtime,omitempty"`
 	Loop       bool    `json:"loop,omitempty"`
 	DurationMs int     `json:"durationMs,omitempty"`
 	Scenes     []Scene `json:"scenes,omitempty"`
@@ -98,6 +106,9 @@ func validateStep(s Step, nodeCount int) error {
 	if s.ClearPartition {
 		kinds++
 	}
+	if s.Load != nil {
+		kinds++
+	}
 	if kinds != 1 {
 		return fmt.Errorf("each step must have exactly one action")
 	}
@@ -123,6 +134,14 @@ func validateStep(s Step, nodeCount int) error {
 	if s.Get != nil {
 		if err := checkNodeID(s.Get.Node, nodeCount); err != nil {
 			return err
+		}
+	}
+	if s.Load != nil {
+		if _, err := time.ParseDuration(s.Load.Duration); err != nil {
+			return fmt.Errorf("load duration: %w", err)
+		}
+		if _, err := time.ParseDuration(s.Load.Interval); err != nil {
+			return fmt.Errorf("load interval: %w", err)
 		}
 	}
 	return nil
@@ -162,6 +181,11 @@ func (s *Step) Description() string {
 		return fmt.Sprintf("partition isolate %v", s.Partition.Isolated)
 	case s.ClearPartition:
 		return "clear partition"
+	case s.Load != nil:
+		if s.Comment != "" {
+			return fmt.Sprintf("load %s @ %s: %s", s.Load.Duration, s.Load.Interval, s.Comment)
+		}
+		return fmt.Sprintf("load %s @ %s", s.Load.Duration, s.Load.Interval)
 	default:
 		return "unknown step"
 	}
@@ -220,8 +244,10 @@ func (srv *Server) runScenario() {
 			srv.mu.Lock()
 			srv.stepIndex = i
 			srv.currentDesc = step.Description()
+			if step.Comment != "" {
+				srv.phase = step.Comment
+			}
 			srv.mu.Unlock()
-			srv.annotateStep(step.Description())
 
 			if err := srv.executeStep(step); err != nil {
 				srv.mu.Lock()
@@ -297,7 +323,7 @@ func (srv *Server) executeStep(step Step) error {
 		if err != nil {
 			return err
 		}
-		if srv.demoPace && !srv.scenario.Showcase {
+		if srv.demoPace && !srv.scenario.Showcase && !srv.scenario.Realtime {
 			d = compressWait(d)
 		}
 		srv.appendLog("waiting " + step.Wait)
@@ -322,6 +348,9 @@ func (srv *Server) executeStep(step Step) error {
 		srv.mu.Lock()
 		srv.lastKilled = target
 		srv.mu.Unlock()
+		if step.Kill == "leader" || target != "" {
+			srv.recordFailoverStart()
+		}
 		return nil
 
 	case step.Restart != "":
@@ -357,6 +386,7 @@ func (srv *Server) executeStep(step Step) error {
 		if err != nil {
 			return srv.continueOnClientError(err, "write")
 		}
+		srv.recordWrite(step.Put.Node, step.Put.Key)
 		srv.appendLog("  → " + result)
 		return nil
 
@@ -407,9 +437,77 @@ func (srv *Server) executeStep(step Step) error {
 		srv.mu.Unlock()
 		return nil
 
+	case step.Load != nil:
+		duration, err := time.ParseDuration(step.Load.Duration)
+		if err != nil {
+			return err
+		}
+		interval, err := time.ParseDuration(step.Load.Interval)
+		if err != nil {
+			return err
+		}
+		prefix := step.Load.KeyPrefix
+		if prefix == "" {
+			prefix = "key"
+		}
+		nodeCount := len(srv.cluster.Nodes)
+		srv.appendLog(fmt.Sprintf("load %s @ %s (prefix %s)", step.Load.Duration, step.Load.Interval, prefix))
+		deadline := time.Now().Add(duration)
+		tick := 0
+		for time.Now().Before(deadline) {
+			if !srv.waitIfPaused() {
+				return nil
+			}
+			nodeID := fmt.Sprintf("node%d", (tick%nodeCount)+1)
+			key := fmt.Sprintf("%s:%d", prefix, tick+1)
+			node := srv.cluster.NodeByID(nodeID)
+			if node != nil && node.Running {
+				result, err := doPut(node.Port, key, fmt.Sprintf("v%d", tick+1), "client")
+				if err != nil {
+					_ = srv.continueOnClientError(err, "write")
+				} else {
+					srv.recordWrite(nodeID, key)
+					if tick%10 == 0 {
+						srv.appendLog(fmt.Sprintf("  → %s on %s", result, nodeID))
+					}
+				}
+			}
+			tick++
+			if !srv.sleepLoadInterval(interval) {
+				return nil
+			}
+		}
+		return nil
+
 	default:
 		return fmt.Errorf("empty step")
 	}
+}
+
+func (srv *Server) recordWrite(to, key string) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	srv.writeCount++
+	srv.lastWrite = WriteEvent{From: "client", To: to, Key: key}
+}
+
+func (srv *Server) sleepLoadInterval(d time.Duration) bool {
+	end := time.Now().Add(d)
+	for time.Now().Before(end) {
+		if !srv.waitIfPaused() {
+			return false
+		}
+		remaining := time.Until(end)
+		if remaining <= 0 {
+			return true
+		}
+		sleep := 50 * time.Millisecond
+		if remaining < sleep {
+			sleep = remaining
+		}
+		time.Sleep(sleep)
+	}
+	return true
 }
 
 func (srv *Server) currentLeaderID() (string, error) {

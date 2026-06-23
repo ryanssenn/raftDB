@@ -239,12 +239,3 @@ func openBrowser(url string) {
 	}
 }
 
-func startCompose(repoRoot string) error {
-	cmd := exec.Command("docker", "compose", "-f", "monitoring/docker-compose.yml", "up", "-d")
-	cmd.Dir = repoRoot
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("docker compose: %w\n%s", err, out)
-	}
-	return nil
-}
