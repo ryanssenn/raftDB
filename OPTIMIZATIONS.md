@@ -176,14 +176,14 @@ Write latency at concurrency 1 dropped from ~11 ms (fsync-dominated floor) to ~2
 2. A **durability gate** in `UpdateCommitIndex`: the leader counts its own copy toward a quorum only up to the durable index, so the fsync can overlap with replication RPCs without ever committing a not-yet-durable entry.
 3. **Channel-generation** commit/apply notifications replacing the broadcast condition variables, so advancing the commit index no longer wakes and serializes every waiter (thundering herd).
 
-**Result (3-node cluster, development host, two runs each):**
+**Result** (3-node cluster, 5 s window, `--no-events`; min–max across repeated runs on the same VM, which showed large run-to-run variance from noisy-neighbor effects):
 
-| Concurrency | baseline (run1 / run2) | pipelined (run1 / run2) |
+| Concurrency | baseline (write ops/s) | pipelined (write ops/s) |
 |---:|---:|---:|
-| 16 | 1,016 / 972 ops/s | 936 / 950 ops/s |
-| 64 | 3,241 / 3,124 ops/s | 3,137 / 3,314 ops/s |
+| 16 | 9,836 – 12,710 (6 runs) | 10,750 – 14,688 (4 runs) |
+| 64 | 13,006 – 15,124 (6 runs) | 12,410 – 14,538 (4 runs) |
 
-**Verdict:** No repeatable improvement — the two runs disagreed on the direction of the change and all deltas were inside ±5% run-to-run noise. The write path is already effectively pipelined: each client request runs in its own goroutine, and measured per-request latency tracks `concurrency / throughput` (Little's law), meaning requests already overlap. The added goroutine, durable-index gate, and notification machinery were complexity without payoff, so the change was **reverted**.
+**Verdict:** No repeatable improvement. The arms' ranges overlap heavily, and at peak concurrency (64 clients — the headline throughput number) the pipelined build is, if anything, slightly *lower*. The consistent pattern across time windows was a small shift of throughput from high to moderate concurrency, not a net gain. The write path is already effectively pipelined: each client request runs in its own goroutine, and per-request latency tracks `concurrency / throughput` (Little's law), so requests already overlap. The added persister goroutine, durable-index gate, and notification machinery were complexity without payoff, so the change was **reverted**.
 
 ---
 
