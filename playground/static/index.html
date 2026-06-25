@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ryanDB</title>
+  <title>Quorum</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -23,16 +23,49 @@
       <header class="sidebar-brand">
         <span id="live-dot" class="live-dot"></span>
         <div>
-          <h1>ryanDB</h1>
+          <h1>Quorum</h1>
           <p id="sidebar-status" class="sidebar-status">Starting…</p>
         </div>
       </header>
 
-      <button id="btn-stress-test" class="btn-primary" type="button">Run stress test</button>
+      <div class="stress-controls">
+        <div class="rate-grid">
+          <label class="rate-field">
+            <span class="rate-label">Writes /s</span>
+            <input type="number" id="write-rps" min="100" max="10000" step="100" value="2000" inputmode="numeric">
+          </label>
+          <label class="rate-field">
+            <span class="rate-label">Reads /s</span>
+            <input type="number" id="read-rps" min="0" max="5000" step="50" value="800" inputmode="numeric">
+          </label>
+        </div>
+      </div>
+
+      <button id="btn-stress-test" class="btn-primary" type="button">Start stress test</button>
 
       <div class="run-progress">
         <div class="progress-bar"><div id="scenario-progress" class="progress-fill"></div></div>
         <p id="scenario-step" class="scenario-step">Idle</p>
+      </div>
+
+      <div class="sidebar-metrics" id="sidebar-metrics">
+        <div class="sm-spark-wrap">
+          <div class="sm-spark-head">
+            <span class="sm-spark-label">Write throughput</span>
+            <strong class="sm-spark-value" id="sm-spark-value">—</strong>
+          </div>
+          <canvas id="sm-spark" class="sm-spark"></canvas>
+        </div>
+
+        <div class="sm-grid">
+          <div class="sm-row"><span>Reads</span><strong id="sm-read-ops">—</strong></div>
+          <div class="sm-row"><span>Write p99</span><strong id="sm-write-p99">—</strong></div>
+          <div class="sm-row"><span>Read p99</span><strong id="sm-read-p99">—</strong></div>
+          <div class="sm-row"><span>Replication lag</span><strong id="sm-lag">—</strong></div>
+          <div class="sm-row"><span>Last failover</span><strong id="sm-failover">—</strong></div>
+          <div class="sm-row"><span>Committed writes</span><strong id="sm-writes">—</strong></div>
+          <div class="sm-row"><span>Nodes up</span><strong id="sm-nodes">—</strong></div>
+        </div>
       </div>
 
       <details class="advanced">
@@ -83,23 +116,29 @@
             <span id="phase-banner" class="phase-label hidden"></span>
             <span id="partition-badge" class="badge hidden">partition</span>
           </div>
-          <span id="topology-stats" class="topology-stats"></span>
-        </header>
-        <p id="node-hint" class="node-hint hidden">Each node has a <strong>Stop node</strong> button — use it to simulate a crash. Stopped nodes show <strong>Start node</strong> to recover.</p>
-        <div class="topology-canvas" id="topology-canvas">
-          <div id="hero-rate" class="hero-rate hidden">
-            <span id="client-rate-value" class="hero-rate-value">0</span>
-            <span class="hero-rate-unit">req/s</span>
-            <span id="client-rate-sub" class="hero-rate-sub"></span>
+          <div class="section-head-right">
+            <div id="hero-rate" class="hero-rate hidden">
+              <span id="client-rate-value" class="hero-rate-value">0</span>
+              <span class="hero-rate-unit">req/s</span>
+              <span id="client-rate-sub" class="hero-rate-sub"></span>
+            </div>
+            <span id="topology-stats" class="topology-stats"></span>
           </div>
+        </header>
+        <p id="node-hint" class="node-hint hidden">Click the red <strong>Crash node</strong> button on any node to simulate a failure. Stopped nodes show <strong>Start node</strong> to recover.</p>
+        <div class="topology-canvas" id="topology-canvas">
           <div id="topology-idle" class="topology-idle">
-            <p class="idle-copy">Run stress test to start a 5-node cluster with concurrent writes and node failures.</p>
+            <p class="idle-copy">Start the stress test to boot a 5-node cluster with continuous reads and writes. Adjust rates above, then stop anytime.</p>
           </div>
           <svg id="topology-svg" preserveAspectRatio="none">
             <rect width="100%" height="100%" fill="#0c0c0e"/>
             <g id="layer-beams"></g>
           </svg>
           <div id="topology-html" class="topology-html">
+            <div id="leader-slot" class="leader-slot hidden">
+              <span class="leader-slot-label">Leader</span>
+            </div>
+            <div id="leader-toast" class="leader-toast hidden" aria-live="polite"></div>
             <div id="fx-layer" class="fx-layer"></div>
             <div id="client-widget" class="client-widget">
               <span class="client-label">Client</span>
@@ -120,13 +159,10 @@
             <span>Lag <strong id="stat-lag">—</strong></span>
             <span>Failover <strong id="stat-failover">—</strong></span>
           </div>
-          <a class="charts-link" id="grafana-open-link" href="http://localhost:3000/d/playground-live/playground-live?kiosk" target="_blank" rel="noopener">Open in Grafana</a>
+          <a class="charts-link" id="grafana-open-link" href="http://localhost:3000/d/playground-live/playground-live?kiosk" target="_blank" rel="noopener">Grafana</a>
         </div>
-        <div id="grafana-panels" class="grafana-grid hidden"></div>
-        <p id="grafana-fallback" class="grafana-fallback hidden">
-          Grafana charts need Docker. Run without <code>--no-compose</code>, or start the stack manually:
-          <code>docker compose -f monitoring/docker-compose.yml up -d</code>
-        </p>
+        <div id="live-charts" class="live-charts-grid"></div>
+        <p id="grafana-hint" class="grafana-hint hidden">Grafana panels also available when Docker is running.</p>
       </section>
 
       <section class="log-section">

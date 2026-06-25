@@ -1,12 +1,16 @@
 import { computeLayout, quorumNeeded } from "./layout.js";
 import { createLayers, Renderer } from "./renderer.js";
 import { ClientFx, clientSource, leaderTarget } from "./clientFx.js";
-import { updateMetricsStats, initGrafanaPanels } from "./metrics.js";
+import { AnimationEngine } from "./animation.js";
+import { updateMetricsStats, updateSidebarMetrics, updateSidebarCluster, mergeDisplayMetrics, showGrafanaHint } from "./metrics.js";
+import { initLiveCharts } from "./liveCharts.js";
 
 const layers = createLayers();
 const renderer = new Renderer(layers);
 const clientFx = new ClientFx(document.getElementById("fx-layer"));
+const replFx = new AnimationEngine(document.getElementById("layer-beams"));
 
+let liveCharts = null;
 let topologyBounds = { width: 1000, height: 420 };
 let selectedNodes = 5;
 let lastLayoutSig = "";
@@ -18,8 +22,108 @@ let pollMetricsGen = 0;
 let lastClusterData = null;
 let lastScenarioData = null;
 let displayRate = 0;
+let targetRate = 0;
 let loadActive = false;
 let lastFrame = 0;
+let replAccum = 0;
+let clientFlowAccum = 0;
+let pollClusterTimer = null;
+let pollMetricsTimer = null;
+let pollLogsTimer = null;
+let frameRaf = null;
+
+/** idle → booting → warming → active */
+let stressPhase = "idle";
+let stressPhaseStart = 0;
+let configuredRate = 0;
+let visualIntensity = 0;
+
+const WARMUP_MS = 4200;
+const BOOT_TIMEOUT_MS = 9000;
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function resetStressVisuals() {
+  stressPhase = "idle";
+  stressPhaseStart = 0;
+  configuredRate = 0;
+  visualIntensity = 0;
+  displayRate = 0;
+  loadActive = false;
+  targetRate = 0;
+  clientFx.setActive(0, false);
+  clientFx.setIntensity(0);
+  clientFx.clear();
+  replFx.clear();
+  renderer.setClientActive(false);
+  paintRateDisplay(0);
+}
+
+function maybeAdvanceStressPhase(cluster) {
+  if (stressPhase !== "booting") return;
+  const leader = (cluster?.nodes || []).find(
+    (n) => n.running && (n.state === 2 || n.stateName === "leader")
+  );
+  if (cluster?.clusterStarted && leader) {
+    stressPhase = "warming";
+    stressPhaseStart = performance.now();
+  } else if (performance.now() - stressPhaseStart > BOOT_TIMEOUT_MS) {
+    stressPhase = "warming";
+    stressPhaseStart = performance.now();
+  }
+}
+
+function tickVisualIntensity() {
+  if (stressPhase === "idle") {
+    visualIntensity = 0;
+    return;
+  }
+  const now = performance.now();
+  if (stressPhase === "booting") {
+    const wait = (now - stressPhaseStart) / 1000;
+    visualIntensity = Math.min(0.1, wait * 0.035);
+    return;
+  }
+  if (stressPhase === "warming") {
+    const t = Math.min(1, (now - stressPhaseStart) / WARMUP_MS);
+    visualIntensity = easeInOutCubic(t);
+    if (t >= 1) stressPhase = "active";
+    return;
+  }
+  visualIntensity = 1;
+}
+
+function stressPhaseLabel(cluster, scenario) {
+  if (stressPhase === "booting") {
+    if (!cluster?.clusterStarted) return "Starting cluster…";
+    const leader = (cluster?.nodes || []).find(
+      (n) => n.running && (n.state === 2 || n.stateName === "leader")
+    );
+    return leader ? "Cluster ready — warming up…" : "Waiting for leader election…";
+  }
+  if (stressPhase === "warming") {
+    const pct = Math.round(visualIntensity * 100);
+    return `Ramping load… ${pct}%`;
+  }
+  if (scenario?.running && scenario?.name === "Continuous stress") return "Running";
+  return "";
+}
+
+renderer.onLeaderChange = (from, to) => {
+  const toast = document.getElementById("leader-toast");
+  if (!toast) return;
+  toast.textContent = `Leader ${from} → ${to}`;
+  toast.classList.remove("hidden");
+  toast.classList.add("show");
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.classList.add("hidden"), 450);
+  }, 3200);
+};
+
 renderer.setActionHandler(async (id, action) => {
   const path = action === "stop" ? "/api/cluster/node/stop" : "/api/cluster/node/start";
   try {
@@ -30,6 +134,21 @@ renderer.setActionHandler(async (id, action) => {
     alert(e.message);
   }
 });
+
+clientFx.onSpawn = () => {
+  const pos = renderer.lastPos;
+  const leaderId = renderer.leaderId;
+  if (!pos || !leaderId) return;
+
+  replFx.spawnFlow("client", leaderId, pos, "put");
+
+  const followers = (lastClusterData?.nodes || [])
+    .filter((n) => n.running && n.id !== leaderId)
+    .map((n) => n.id);
+  if (followers.length > 0 && Math.random() < 0.65) {
+    replFx.spawnReplication(leaderId, followers, pos);
+  }
+};
 
 async function apiPost(path, body) {
   const res = await fetch(path, {
@@ -59,10 +178,12 @@ function scenarioSignature(sc) {
   return [sc.running, sc.stepIndex, sc.phase, sc.writeCount, sc.load?.sendRate, sc.done].join("|");
 }
 
-function metricsStatsSignature(m) {
+function metricsStatsSignature(m, scenario) {
+  const load = scenario?.load;
   return [
     m.writeOpsSec, m.readOpsSec, m.writeP99Ms, m.readP99Ms,
     m.maxReplicationLag, m.failoverMs, m.clientSendRate,
+    load?.writeP99Ms, load?.readSuccessRate,
   ].join("|");
 }
 
@@ -83,38 +204,46 @@ function updateReadyChecks(checks) {
     .join("");
 }
 
+function revealApp(grafanaOk) {
+  document.getElementById("loading-overlay").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  if (!liveCharts) liveCharts = initLiveCharts();
+  showGrafanaHint(grafanaOk);
+}
+
 async function waitForReady() {
-  const overlay = document.getElementById("loading-overlay");
   const status = document.getElementById("loading-status");
-  const app = document.getElementById("app");
-  const deadline = Date.now() + 90000;
-  let grafanaEnabled = false;
+  const deadline = Date.now() + 15000;
+  let grafanaOk = false;
+  let revealed = false;
 
   while (Date.now() < deadline) {
     try {
       const res = await fetch("/api/ready");
       const data = await res.json();
       updateReadyChecks(data.checks);
-      grafanaEnabled = data.checks?.grafana === "ok";
+      grafanaOk = data.checks?.grafana === "ok";
+
+      if (!revealed) {
+        revealApp(grafanaOk);
+        revealed = true;
+      }
+
       if (data.ready) {
-        overlay.classList.add("hidden");
-        app.classList.remove("hidden");
-        initGrafanaPanels(grafanaEnabled);
+        status.textContent = "Ready";
         return;
       }
       const pending = Object.entries(data.checks || {})
         .filter(([, v]) => v === "pending")
         .map(([k]) => k);
-      status.textContent = pending.length ? `Waiting for ${pending.join(", ")}…` : "Starting…";
+      status.textContent = pending.length ? `Starting ${pending.join(", ")}…` : "Starting…";
     } catch (_) {
       status.textContent = "Connecting…";
     }
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 400));
   }
 
-  overlay.classList.add("hidden");
-  app.classList.remove("hidden");
-  initGrafanaPanels(grafanaEnabled);
+  if (!revealed) revealApp(grafanaOk);
 }
 
 function resizeTopology() {
@@ -153,8 +282,7 @@ function paintRateDisplay(rate) {
   const hero = document.getElementById("hero-rate");
   if (!value) return;
 
-  const text = formatRateLarge(rate);
-  value.textContent = text;
+  value.textContent = formatRateLarge(rate);
   hero?.classList.toggle("hidden", !loadActive && rate <= 0);
 }
 
@@ -162,16 +290,46 @@ function updateClientRate(metrics, scenario) {
   const load = scenario?.load;
   const sendRate = load?.active ? load.sendRate : metrics?.clientSendRate;
   const successRate = load?.active ? load.successRate : metrics?.clientSuccessRate;
+  const measured = sendRate || successRate || 0;
+
+  if (stressPhase !== "idle") {
+    tickVisualIntensity();
+    if (stressPhase === "active") {
+      targetRate = measured || configuredRate;
+      loadActive = Boolean(scenario?.running || measured > 0);
+    } else {
+      targetRate = configuredRate * visualIntensity;
+      loadActive = visualIntensity > 0.08 && stressPhase !== "booting";
+    }
+    renderer.setClientActive(loadActive || stressPhase === "warming" || stressPhase === "active");
+    clientFx.setActive(measured || configuredRate, stressPhase !== "idle");
+    clientFx.setIntensity(visualIntensity);
+
+    const sub = document.getElementById("client-rate-sub");
+    if (sub) {
+      if (stressPhase === "booting") {
+        sub.textContent = "starting…";
+      } else if (stressPhase === "warming") {
+        sub.textContent = "warming up…";
+      } else {
+        sub.textContent = `${formatRateShort(successRate || sendRate || targetRate)} ok/s`;
+      }
+    }
+    return;
+  }
+
   loadActive = Boolean((load?.active && sendRate > 0) || sendRate > 0 || scenario?.running);
-  targetRate = sendRate || 0;
+  targetRate = measured || (scenario?.running ? 800 : 0);
 
   renderer.setClientActive(loadActive);
+  clientFx.setActive(targetRate, loadActive);
+  clientFx.setIntensity(loadActive ? 1 : 0);
 
   const sub = document.getElementById("client-rate-sub");
   if (sub) {
     const workers = load?.concurrency ? `${load.concurrency} workers · ` : "";
     sub.textContent = loadActive
-      ? `${workers}${formatRateShort(successRate || 0)} ok/s`
+      ? `${workers}${formatRateShort(successRate || sendRate || 0)} ok/s`
       : "";
   }
 }
@@ -199,6 +357,8 @@ function updateStatus(data, scenario) {
   const stressBtn = document.getElementById("btn-stress-test");
   const idleOverlay = document.getElementById("topology-idle");
   const nodeHint = document.getElementById("node-hint");
+  const writeRpsInput = document.getElementById("write-rps");
+  const readRpsInput = document.getElementById("read-rps");
 
   if (!data.clusterStarted) {
     liveDot.className = "live-dot";
@@ -209,24 +369,44 @@ function updateStatus(data, scenario) {
     sidebarStatus.textContent = `Leader ${leader.id} · term ${leader.term} · commit ${maxCommit}`;
     nodeHint?.classList.remove("hidden");
   } else {
-    liveDot.className = "live-dot";
+    liveDot.className = "live-dot warn";
     sidebarStatus.textContent = `${running.length}/${nodes.length} nodes · electing…`;
     nodeHint?.classList.remove("hidden");
   }
 
-  stressBtn.disabled = stressActive;
-  stressBtn.classList.toggle("running", stressActive);
-  idleOverlay?.classList.toggle("hidden", stressActive || (data.clusterStarted && scenario?.done));
+  if (stressActive) {
+    stressBtn.textContent = "Stop stress test";
+    stressBtn.classList.add("running", "stop-mode");
+    stressBtn.disabled = false;
+  } else {
+    stressBtn.textContent = "Start stress test";
+    stressBtn.classList.remove("running", "stop-mode");
+    stressBtn.disabled = false;
+    if (stressPhase !== "idle") resetStressVisuals();
+  }
+  writeRpsInput?.toggleAttribute("disabled", stressActive);
+  readRpsInput?.toggleAttribute("disabled", stressActive);
+
+  idleOverlay?.classList.toggle("hidden", stressActive || data.clusterStarted);
 
   const writeCount = scenario?.writeCount ?? 0;
   document.getElementById("topology-stats").textContent = data.clusterStarted
     ? `${running.length}/${nodes.length} up · quorum ${quorumNeeded(nodes.length || selectedNodes)} · ${writeCount} writes`
     : "";
+  updateSidebarCluster({
+    writeCount,
+    running: running.length,
+    total: nodes.length || selectedNodes,
+  });
 
   const phaseBanner = document.getElementById("phase-banner");
   if (phaseBanner) {
+    const stressLabel = stressPhase !== "idle" ? stressPhaseLabel(data, scenario) : "";
     const phase = scenario?.phase || "";
-    if (stressActive && phase) {
+    if (stressLabel) {
+      phaseBanner.textContent = stressLabel;
+      phaseBanner.classList.remove("hidden");
+    } else if (stressActive && phase) {
       phaseBanner.textContent = phase;
       phaseBanner.classList.remove("hidden");
     } else if (data.clusterStarted && leader) {
@@ -236,6 +416,8 @@ function updateStatus(data, scenario) {
       phaseBanner.classList.add("hidden");
     }
   }
+
+  maybeAdvanceStressPhase(data);
 
   document.getElementById("partition-badge")?.classList.toggle("hidden", !data.partitionActive);
   document.getElementById("btn-start").disabled = data.clusterStarted;
@@ -248,6 +430,7 @@ function updateStatus(data, scenario) {
   if (combined === lastLayoutSig) return;
   lastLayoutSig = combined;
 
+  renderer.clusterStarted = Boolean(data.clusterStarted);
   const pos = computeLayout(nodes, topologyBounds);
   renderer.syncNodes(nodes, pos, data.partitionNodes || [], topologyBounds);
   updateFxRoute(pos, renderer.leaderId);
@@ -263,6 +446,15 @@ function updateScenario(sc) {
   if (!sc.loaded) {
     stepEl.textContent = "Idle";
     progress.style.width = "0%";
+    return;
+  }
+  if (sc.running && sc.name === "Continuous stress") {
+    stepEl.textContent = "Running continuous load — click Stop stress test to end";
+    progress.style.width = "100%";
+    document.getElementById("btn-pause").disabled = true;
+    const log = document.getElementById("event-log");
+    const line = (sc.log || []).slice(-1)[0];
+    log.textContent = line ? line : "";
     return;
   }
   const pct = sc.totalSteps ? Math.round(((sc.stepIndex + (sc.running ? 0.5 : 0)) / sc.totalSteps) * 100) : 0;
@@ -287,6 +479,7 @@ async function pollCluster() {
     if (gen !== pollClusterGen) return;
     updateStatus(cluster, scenario);
     updateScenario(scenario);
+    updateClientRate({}, scenario);
   } catch (_) { /* ignore */ }
 }
 
@@ -300,14 +493,67 @@ async function pollMetrics() {
     if (gen !== pollMetricsGen) return;
 
     updateClientRate(metrics, scenario);
-    clientFx.setActive(targetRate, loadActive);
+    if (stressPhase === "idle") {
+      clientFx.setActive(targetRate, loadActive);
+      clientFx.setIntensity(loadActive ? 1 : 0);
+    }
 
-    const statsSig = metricsStatsSignature(metrics);
+    const display = mergeDisplayMetrics(metrics, scenario);
+    const statsSig = metricsStatsSignature(display, scenario);
     if (statsSig !== lastMetricsStatsSig) {
       lastMetricsStatsSig = statsSig;
-      updateMetricsStats(metrics);
+      updateMetricsStats(display);
     }
+    updateSidebarMetrics(display);
+    liveCharts?.update(display);
   } catch (_) { /* ignore */ }
+}
+
+let pollLogsGen = 0;
+async function pollLogs() {
+  const gen = ++pollLogsGen;
+  try {
+    const res = await fetch("/api/cluster/logs");
+    const data = await res.json();
+    if (gen !== pollLogsGen) return;
+    const byNode = {};
+    for (const n of data.nodes || []) byNode[n.id] = n;
+    renderer.updateLogs(byNode);
+  } catch (_) { /* ignore */ }
+}
+
+function tickClientFlows(dt) {
+  if (visualIntensity < 0.08 || !renderer.leaderId || !renderer.lastPos) return;
+  const pos = renderer.lastPos;
+  if (!pos.client || !pos[renderer.leaderId]) return;
+
+  clientFlowAccum += dt;
+  const effective = (targetRate || configuredRate) * visualIntensity;
+  const interval = 1 / Math.max(0.9, Math.min(5, effective / 160));
+  if (clientFlowAccum < interval) return;
+  clientFlowAccum = 0;
+  replFx.spawnFlow("client", renderer.leaderId, pos, "put");
+}
+
+function tickReplication(dt) {
+  if (visualIntensity < 0.3 || !renderer.leaderId) return;
+  replAccum += dt * visualIntensity;
+  const interval = Math.max(0.18, 0.55 - targetRate / 12000);
+  if (replAccum < interval) return;
+  replAccum = 0;
+
+  const pos = renderer.lastPos;
+  const followers = (lastClusterData?.nodes || [])
+    .filter((n) => n.running && n.id !== renderer.leaderId)
+    .map((n) => n.id);
+  if (followers.length === 0) return;
+
+  const burst = 1 + Math.floor(visualIntensity * 2);
+  replFx.spawnReplication(
+    renderer.leaderId,
+    followers.slice(0, Math.min(followers.length, burst)),
+    pos
+  );
 }
 
 function frameLoop(ts) {
@@ -315,11 +561,35 @@ function frameLoop(ts) {
   const dt = Math.min(0.05, (ts - lastFrame) / 1000);
   lastFrame = ts;
 
-  displayRate += (targetRate - displayRate) * Math.min(1, dt * 14);
+  const ease = visualIntensity < 1 ? 5 : 14;
+  displayRate += (targetRate - displayRate) * Math.min(1, dt * ease);
+  tickVisualIntensity();
+  clientFx.setIntensity(visualIntensity);
   paintRateDisplay(displayRate);
   clientFx.tick(dt);
+  tickClientFlows(dt);
+  tickReplication(dt);
+  replFx.tick(ts);
+  frameRaf = requestAnimationFrame(frameLoop);
+}
 
-  requestAnimationFrame(frameLoop);
+function stopPolling() {
+  if (pollClusterTimer != null) {
+    clearInterval(pollClusterTimer);
+    pollClusterTimer = null;
+  }
+  if (pollMetricsTimer != null) {
+    clearInterval(pollMetricsTimer);
+    pollMetricsTimer = null;
+  }
+  if (pollLogsTimer != null) {
+    clearInterval(pollLogsTimer);
+    pollLogsTimer = null;
+  }
+  if (frameRaf != null) {
+    cancelAnimationFrame(frameRaf);
+    frameRaf = null;
+  }
 }
 
 document.querySelectorAll("#node-segments button").forEach((btn) => {
@@ -368,17 +638,68 @@ document.getElementById("btn-pause").addEventListener("click", async () => {
   try { await apiPost("/api/scenario/pause"); } catch (e) { alert(e.message); }
 });
 
+function clampRateInput(input) {
+  if (!input) return;
+  const min = parseInt(input.min, 10) || 0;
+  const max = parseInt(input.max, 10) || Infinity;
+  let v = parseInt(input.value, 10);
+  if (Number.isNaN(v)) v = min;
+  input.value = String(Math.min(max, Math.max(min, v)));
+}
+
+["write-rps", "read-rps"].forEach((id) => {
+  const input = document.getElementById(id);
+  input?.addEventListener("change", () => clampRateInput(input));
+});
+
 document.getElementById("btn-stress-test").addEventListener("click", async () => {
   const btn = document.getElementById("btn-stress-test");
+  const isRunning = btn.classList.contains("stop-mode");
+
+  if (isRunning) {
+    btn.disabled = true;
+    try {
+      await apiPost("/api/stress/stop");
+      resetStressVisuals();
+      lastScenarioSig = "";
+      pollCluster();
+      pollMetrics();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  const writeRps = parseInt(document.getElementById("write-rps").value, 10);
+  const readRps = parseInt(document.getElementById("read-rps").value, 10);
+  clampRateInput(document.getElementById("write-rps"));
+  clampRateInput(document.getElementById("read-rps"));
+
+  configuredRate = writeRps + readRps;
+  stressPhase = "booting";
+  stressPhaseStart = performance.now();
+  loadActive = false;
+  targetRate = 0;
+  displayRate = 0;
+  visualIntensity = 0;
+  clientFx.setIntensity(0);
+  document.getElementById("topology-idle")?.classList.add("hidden");
+  document.getElementById("hero-rate")?.classList.remove("hidden");
+  paintRateDisplay(0);
+
   btn.disabled = true;
   try {
-    await apiPost("/api/scenario/stress-test");
+    await apiPost("/api/scenario/stress-test", { writeRps, readRps });
     lastLayoutSig = "";
     lastScenarioSig = "";
     pollCluster();
     pollMetrics();
   } catch (e) {
     alert(e.message);
+    resetStressVisuals();
+  } finally {
     btn.disabled = false;
   }
 });
@@ -388,6 +709,7 @@ document.getElementById("btn-quit").addEventListener("click", async () => {
   const btn = document.getElementById("btn-quit");
   btn.disabled = true;
   btn.textContent = "Stopping…";
+  stopPolling();
   try {
     await apiPost("/api/quit");
   } catch (_) { /* server may exit before response completes */ }
@@ -401,7 +723,7 @@ document.getElementById("btn-quit").addEventListener("click", async () => {
 let resizeTimer;
 const ro = new ResizeObserver(() => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(resizeTopology, 150);
+  resizeTimer = setTimeout(resizeTopology, 100);
 });
 ro.observe(document.getElementById("topology-canvas"));
 
@@ -409,7 +731,9 @@ waitForReady().then(() => {
   resizeTopology();
   pollCluster();
   pollMetrics();
-  setInterval(pollCluster, 1200);
-  setInterval(pollMetrics, 350);
-  requestAnimationFrame(frameLoop);
+  pollLogs();
+  pollClusterTimer = setInterval(pollCluster, 800);
+  pollMetricsTimer = setInterval(pollMetrics, 200);
+  pollLogsTimer = setInterval(pollLogs, 1000);
+  frameRaf = requestAnimationFrame(frameLoop);
 });

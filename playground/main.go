@@ -27,7 +27,7 @@ func main() {
 	keepMonitoring := flag.Bool("keep-monitoring", false, "leave Prometheus/Grafana running after exit")
 	bootstrap := flag.Bool("bootstrap", false, "auto-start cluster on launch (stress test still waits for Run stress test)")
 	noBootstrap := flag.Bool("no-bootstrap", true, "do not auto-start cluster on launch")
-	binary := flag.String("binary", "", "path to ryanDB binary")
+	binary := flag.String("binary", "", "path to quorum binary")
 	demoPace := flag.Bool("demo", true, "compress scenario waits")
 	scenarioFlag := flag.String("scenario", "", "scenario JSON path (default: steady-writes.json when bootstrapping)")
 	flag.Parse()
@@ -120,13 +120,16 @@ func main() {
 
 	log.Println("shutting down...")
 	srv.Stop()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_ = server.Shutdown(ctx)
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("server shutdown: %v", err)
+	}
 	if composeEnabled && !*keepMonitoring {
 		stopComposeStack(repoRoot)
 	}
 	log.Println("playground stopped")
+	os.Exit(0)
 }
 
 func portAvailable(port int) error {

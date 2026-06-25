@@ -1,6 +1,6 @@
-# RaftDB Benchmark Report
+# Quorum Benchmark Report
 
-Performance measurements for RaftDB, the replicated in-memory key-value store in this repository. This report describes which metrics were chosen, how they were measured, and the results from a single-host test run.
+Performance measurements for Quorum, the replicated in-memory key-value store in this repository. This report describes which metrics were chosen, how they were measured, and the results from a single-host test run.
 
 Reproduce the run with `go run ./benchmarks` followed by `python3 benchmarks/plot.py`. See [`README.md`](README.md) for options.
 
@@ -8,7 +8,7 @@ Reproduce the run with `go run ./benchmarks` followed by `python3 benchmarks/plo
 
 ## 1. Metrics and methodology
 
-For a Raft-backed store, throughput and latency percentiles are the primary capacity metrics. Availability after leader failure matters for replicated systems. The table below lists each metric considered and whether it applies to RaftDB.
+For a Raft-backed store, throughput and latency percentiles are the primary capacity metrics. Availability after leader failure matters for replicated systems. The table below lists each metric considered and whether it applies to Quorum.
 
 | Metric | Included | Rationale |
 |---|---|---|
@@ -117,7 +117,7 @@ At 16 concurrent clients writing to the leader, 3-node and 5-node clusters perfo
 | 3 | node2 → node3 | 315 |
 | Mean | | 327 |
 
-The leader was killed during load. Recovery time is measured from the kill until a write to a surviving follower commits successfully. Mean recovery was 327 ms, which aligns with RaftDB's randomized election timeout of 300–450 ms (see project README). No manual steps were required for the cluster to accept writes again.
+The leader was killed during load. Recovery time is measured from the kill until a write to a surviving follower commits successfully. Mean recovery was 327 ms, which aligns with Quorum's randomized election timeout of 300–450 ms (see project README). No manual steps were required for the cluster to accept writes again.
 
 ---
 

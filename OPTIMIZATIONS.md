@@ -1,6 +1,6 @@
 # Performance Optimizations
 
-This document tracks optimizations applied to RaftDB based on the roadmap in `docs/performance.md`. Each change was benchmarked individually; only improvements that measurably helped key metrics were kept.
+This document tracks optimizations applied to Quorum based on the roadmap in `docs/performance.md`. Each change was benchmarked individually; only improvements that measurably helped key metrics were kept.
 
 **Benchmark command** (consistent across all runs):
 
@@ -85,7 +85,7 @@ Write latency at concurrency 1 dropped from ~11 ms (fsync-dominated floor) to ~2
 
 **Problem:** Event recording on every client request and Raft RPC adds mutex + allocation overhead.
 
-**Implementation:** Added `--no-events` flag to `ryanDB` and `--no-events` passthrough in the benchmark harness.
+**Implementation:** Added `--no-events` flag to `quorum` and `--no-events` passthrough in the benchmark harness.
 
 **Files:** `main.go`, `benchmarks/main.go`
 

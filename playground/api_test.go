@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ryansenn/ryanDB/internal/harness"
+	"github.com/ryansenn/quorum/internal/harness"
 )
 
 func TestPlaygroundAPI(t *testing.T) {
 	repoRoot := findRepoRoot()
-	binaryPath := filepath.Join(repoRoot, "ryanDB")
+	binaryPath := filepath.Join(repoRoot, "quorum")
 	build := exec.Command("go", "build", "-o", binaryPath, ".")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
@@ -108,8 +108,8 @@ func TestPlaygroundAPI(t *testing.T) {
 	}
 	metricsBody, _ := io.ReadAll(metricsResp.Body)
 	metricsResp.Body.Close()
-	if !strings.Contains(string(metricsBody), "raftdb_term") {
-		t.Fatalf("node metrics missing raftdb_term")
+	if !strings.Contains(string(metricsBody), "quorum_term") {
+		t.Fatalf("node metrics missing quorum_term")
 	}
 
 	clusterMetrics, err := http.Get(ts.URL + "/metrics")
@@ -118,8 +118,8 @@ func TestPlaygroundAPI(t *testing.T) {
 	}
 	clusterBody, _ := io.ReadAll(clusterMetrics.Body)
 	clusterMetrics.Body.Close()
-	if !strings.Contains(string(clusterBody), "raftdb_replication_lag") {
-		t.Fatalf("cluster metrics missing raftdb_replication_lag")
+	if !strings.Contains(string(clusterBody), "quorum_replication_lag") {
+		t.Fatalf("cluster metrics missing quorum_replication_lag")
 	}
 
 	resp, err = post("/api/cluster/stop", nil)

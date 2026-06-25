@@ -1,7 +1,7 @@
 changes.txt
 logs/
 .vscode/
-ryanDB
+quorum
 visualizer/
 benchmarks/results/*.csv
 benchmarks/results/*.json

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ryansenn/ryanDB/internal/harness"
+	"github.com/ryansenn/quorum/internal/harness"
 )
 
 type ClusterNode struct {
@@ -197,14 +197,14 @@ func ensureBinary(repoRoot, binaryPath string) (string, error) {
 	if binaryPath != "" {
 		return binaryPath, nil
 	}
-	path := filepath.Join(repoRoot, "ryanDB")
+	path := filepath.Join(repoRoot, "quorum")
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
-	cmd := exec.Command("go", "build", "-o", "ryanDB", ".")
+	cmd := exec.Command("go", "build", "-o", "quorum", ".")
 	cmd.Dir = repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("build ryanDB: %w\n%s", err, out)
+		return "", fmt.Errorf("build quorum: %w\n%s", err, out)
 	}
 	return path, nil
 }

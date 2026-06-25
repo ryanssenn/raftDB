@@ -91,13 +91,13 @@ func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
 	resp := liveMetricsResponse{}
 
 	if srv.composeEnabled && prometheusReady() {
-		resp.WriteOpsSec = promQueryScalar(`sum(rate(raftdb_client_requests_total{op="put",result="success"}[30s]))`)
-		resp.ReadOpsSec = promQueryScalar(`sum(rate(raftdb_client_requests_total{op="get",result="success"}[30s]))`)
-		resp.WriteP99Ms = promQueryScalar(`histogram_quantile(0.99, sum(rate(raftdb_client_request_duration_seconds_bucket{op="put"}[30s])) by (le)) * 1000`)
-		resp.ReadP99Ms = promQueryScalar(`histogram_quantile(0.99, sum(rate(raftdb_client_request_duration_seconds_bucket{op="get"}[30s])) by (le)) * 1000`)
-		resp.CommitRate = promQueryScalar(`sum(rate(raftdb_commits_total[30s]))`)
-		resp.MaxReplicationLag = promQueryScalar(`max(raftdb_replication_lag)`)
-		resp.ElectionRate = promQueryScalar(`sum(rate(raftdb_elections_total[30s]))`)
+		resp.WriteOpsSec = promQueryScalar(`sum(rate(quorum_client_requests_total{op="put",result="success"}[5s]))`)
+		resp.ReadOpsSec = promQueryScalar(`sum(rate(quorum_client_requests_total{op="get",result="success"}[5s]))`)
+		resp.WriteP99Ms = promQueryScalar(`histogram_quantile(0.99, sum(rate(quorum_client_request_duration_seconds_bucket{op="put"}[5s])) by (le)) * 1000`)
+		resp.ReadP99Ms = promQueryScalar(`histogram_quantile(0.99, sum(rate(quorum_client_request_duration_seconds_bucket{op="get"}[5s])) by (le)) * 1000`)
+		resp.CommitRate = promQueryScalar(`sum(rate(quorum_commits_total[5s]))`)
+		resp.MaxReplicationLag = promQueryScalar(`max(quorum_replication_lag)`)
+		resp.ElectionRate = promQueryScalar(`sum(rate(quorum_elections_total[5s]))`)
 	}
 
 	srv.metricsMu.Lock()
@@ -105,15 +105,28 @@ func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
 		ms := *srv.lastFailoverMs
 		resp.FailoverMs = &ms
 	}
-	srv.appendHistory(&srv.metricsHistory, now,
-		resp.WriteOpsSec, resp.ReadOpsSec, resp.WriteP99Ms, resp.ReadP99Ms,
-		resp.CommitRate, resp.MaxReplicationLag)
 
 	load := srv.loadStatsSnapshot()
 	if load.Active {
 		resp.ClientSendRate = load.SendRate
 		resp.ClientSuccessRate = load.SuccessRate
+		if load.SuccessRate > resp.WriteOpsSec {
+			resp.WriteOpsSec = load.SuccessRate
+		}
+		if load.ReadSuccessRate > resp.ReadOpsSec {
+			resp.ReadOpsSec = load.ReadSuccessRate
+		}
+		if load.WriteP99Ms > 0 {
+			resp.WriteP99Ms = load.WriteP99Ms
+		}
+		if load.ReadP99Ms > 0 {
+			resp.ReadP99Ms = load.ReadP99Ms
+		}
 	}
+
+	srv.appendHistory(&srv.metricsHistory, now,
+		resp.WriteOpsSec, resp.ReadOpsSec, resp.WriteP99Ms, resp.ReadP99Ms,
+		resp.CommitRate, resp.MaxReplicationLag)
 
 	resp.History = srv.metricsHistory
 	srv.metricsMu.Unlock()

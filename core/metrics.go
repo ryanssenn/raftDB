@@ -10,67 +10,67 @@ import (
 
 var (
 	termGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_term",
+		Name: "quorum_term",
 		Help: "Current Raft term.",
 	}, []string{"node"})
 
 	commitIndexGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_commit_index",
+		Name: "quorum_commit_index",
 		Help: "Highest committed log index.",
 	}, []string{"node"})
 
 	lastAppliedGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_last_applied",
+		Name: "quorum_last_applied",
 		Help: "Highest applied log index.",
 	}, []string{"node"})
 
 	applyLagGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_apply_lag",
+		Name: "quorum_apply_lag",
 		Help: "Commit index minus last applied index.",
 	}, []string{"node"})
 
 	logLengthGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_log_length",
+		Name: "quorum_log_length",
 		Help: "Number of log entries.",
 	}, []string{"node"})
 
 	stateGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_state",
+		Name: "quorum_state",
 		Help: "Raft state: 0=follower, 1=candidate, 2=leader.",
 	}, []string{"node"})
 
 	isLeaderGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_is_leader",
+		Name: "quorum_is_leader",
 		Help: "1 if this node is the leader.",
 	}, []string{"node"})
 
 	electionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "raftdb_elections_total",
+		Name: "quorum_elections_total",
 		Help: "Election attempts started by this node.",
 	}, []string{"node"})
 
 	commitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "raftdb_commits_total",
+		Name: "quorum_commits_total",
 		Help: "Log entries committed by this node as leader.",
 	}, []string{"node"})
 
 	appendEntriesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "raftdb_append_entries_total",
+		Name: "quorum_append_entries_total",
 		Help: "AppendEntries RPC results.",
 	}, []string{"node", "result"})
 
 	requestVoteTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "raftdb_requestvote_total",
+		Name: "quorum_requestvote_total",
 		Help: "RequestVote RPC results.",
 	}, []string{"node", "result"})
 
 	clientRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "raftdb_client_requests_total",
+		Name: "quorum_client_requests_total",
 		Help: "Client HTTP requests.",
 	}, []string{"node", "op", "result"})
 
 	clientRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "raftdb_client_request_duration_seconds",
+		Name:    "quorum_client_request_duration_seconds",
 		Help:    "Client HTTP request latency.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"node", "op"})

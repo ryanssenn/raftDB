@@ -5,8 +5,15 @@ import (
 	"fmt"
 	"time"
 
-	pb "github.com/ryansenn/ryanDB/proto/nodepb"
+	pb "github.com/ryansenn/quorum/proto/nodepb"
 )
+
+// maxEntriesPerAppend bounds how many log entries the leader sends in a single
+// AppendEntries RPC. Without a cap, a follower that restarts far behind would be
+// sent its entire missing tail at once; under heavy load that payload exceeds the
+// RPC deadline, the call errors out, and the follower never catches up. Sending in
+// bounded batches lets a recovering follower make steady forward progress.
+const maxEntriesPerAppend = 256
 
 func (n *Node) notifyReplicators() {
 	select {
@@ -67,7 +74,11 @@ func (n *Node) ReplicateToFollower(id string) {
 		var snapshot []*LogEntry
 		n.LogMu.Lock()
 		if startIndex < int64(len(n.Log)) {
-			snapshot = append(snapshot, n.Log[startIndex:]...)
+			end := startIndex + maxEntriesPerAppend
+			if end > int64(len(n.Log)) {
+				end = int64(len(n.Log))
+			}
+			snapshot = append(snapshot, n.Log[startIndex:end]...)
 		}
 		if prevIndex >= 0 && prevIndex < int64(len(n.Log)) {
 			prevTerm = int64(n.Log[prevIndex].Term)

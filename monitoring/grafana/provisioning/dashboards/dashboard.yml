@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: Raft
+  - name: Quorum
     orgId: 1
-    folder: Raft
+    folder: Quorum
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10

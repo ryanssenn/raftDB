@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "github.com/ryansenn/ryanDB/proto/nodepb"
+	pb "github.com/ryansenn/quorum/proto/nodepb"
 )
 
 const rpcTimeout = 500 * time.Millisecond

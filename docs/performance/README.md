@@ -1,6 +1,6 @@
 # Performance
 
-RaftDB includes a benchmark harness and a documented optimization campaign. These numbers demonstrate that the educational implementation is also performant on a single host.
+Quorum includes a benchmark harness and a documented optimization campaign. These numbers demonstrate that the educational implementation is also performant on a single host.
 
 ## Summary (3-node cluster)
 

@@ -23,6 +23,7 @@ const roleStyles = {
   candidate: { stroke: "#ca8a04", badge: "Candidate" },
   leader: { stroke: "#2563eb", badge: "Leader" },
   offline: { stroke: "#27272a", badge: "Offline" },
+  idle: { stroke: "#27272a", badge: "Idle" },
 };
 
 function nodeRole(node) {
@@ -39,10 +40,15 @@ function dataSignature(node) {
   return [node.term, node.commitIndex, node.logLength].join(",");
 }
 
-function placeNode(el, p, bounds) {
+function placeNode(el, p, bounds, animate = true) {
+  if (!animate) el.style.transition = "none";
   el.style.left = `${(p.x / bounds.width) * 100}%`;
   el.style.top = `${(p.y / bounds.height) * 100}%`;
   el.style.setProperty("--scale", String(p.scale || 1));
+  if (!animate) {
+    void el.offsetWidth;
+    el.style.transition = "";
+  }
 }
 
 export class Renderer {
@@ -56,7 +62,10 @@ export class Renderer {
     this.lastPos = {};
     this.lastBounds = null;
     this.leaderId = null;
+    this._prevLeaderId = null;
     this.onAction = null;
+    this.onLeaderChange = null;
+    this.leaderSlotEl = document.getElementById("leader-slot");
 
     this.layers.nodes?.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-action]");
@@ -99,12 +108,18 @@ export class Renderer {
     }
 
     const leader = nodes.find((n) => n.running && (n.state === 2 || n.stateName === "leader"));
+    const prevLeader = this.leaderId;
     this.leaderId = leader?.id ?? null;
 
-    if (layoutChanged) {
+    if (prevLeader !== this.leaderId) {
+      this._handleLeaderChange(prevLeader, this.leaderId);
+    }
+
+    if (layoutChanged || prevLeader !== this.leaderId) {
       this._syncBeams(leader, nodes, pos);
       this._syncClientBeam(leader, pos);
       this._syncClient(pos, bounds);
+      this._syncLeaderSlot(pos, bounds, Boolean(leader));
     }
 
     for (const node of nodes) {
@@ -118,19 +133,32 @@ export class Renderer {
         this.layers.nodes.appendChild(card);
       }
 
-      const role = nodeRole(node);
+      const idle = !node.running && !this.clusterStarted;
+      const role = idle ? "idle" : nodeRole(node);
       const part = isolated.has(node.id);
-      const dSig = dataSignature(node);
+      const dSig = dataSignature(node) + "|" + idle;
 
-      if (layoutChanged || card._lastRole !== role || card._part !== part) {
-        placeNode(card, p, bounds);
-        card.classList.toggle("offline", !node.running);
+      const moved = card._lastX !== p.x || card._lastY !== p.y;
+      if (layoutChanged || card._lastRole !== role || card._part !== part || moved) {
+        const animate = card._placed !== false;
+        if (!card._placed) {
+          card._placed = true;
+          placeNode(card, p, bounds, false);
+        } else {
+          placeNode(card, p, bounds, animate);
+        }
+        card._lastX = p.x;
+        card._lastY = p.y;
+        card.classList.toggle("offline", !node.running && !idle);
+        card.classList.toggle("idle", idle);
         card.classList.toggle("leader", role === "leader");
         card.classList.toggle("partitioned", part);
         card.dataset.role = role;
 
         const roleEl = card.querySelector(".node-role");
-        roleEl.textContent = part ? "Isolated" : roleStyles[role].badge;
+        roleEl.textContent = part
+          ? "Isolated"
+          : (roleStyles[role]?.badge ?? "Idle");
 
         const stopBtn = card.querySelector('[data-action="stop"]');
         const startBtn = card.querySelector('[data-action="start"]');
@@ -145,12 +173,21 @@ export class Renderer {
       }
 
       if (layoutChanged || this.dataSigs[node.id] !== dSig) {
+        const prevCommit = card._lastCommit ?? -1;
+        const commit = node.commitIndex ?? -1;
+        const idleNow = !node.running && !this.clusterStarted;
         card.querySelector(".node-term").textContent = node.running
           ? `term ${node.term ?? "—"}`
-          : "stopped";
+          : idleNow ? "not started" : "crashed";
         card.querySelector(".node-commit").textContent = node.running
           ? `commit ${node.commitIndex ?? "—"}`
-          : "Start to recover";
+          : idleNow ? "" : "Start to recover";
+        if (node.running && commit > prevCommit && prevCommit >= 0) {
+          card.classList.add("commit-flash");
+          clearTimeout(card._flashTimer);
+          card._flashTimer = setTimeout(() => card.classList.remove("commit-flash"), 350);
+        }
+        card._lastCommit = commit;
         this.dataSigs[node.id] = dSig;
       }
     }
@@ -158,6 +195,41 @@ export class Renderer {
 
   setClientActive(active) {
     this.layers.client?.classList.toggle("active", active);
+    document.getElementById("topology-svg")?.classList.toggle("beams-active", active);
+  }
+
+  _handleLeaderChange(from, to) {
+    if (from && this.nodeEls[from]) {
+      const card = this.nodeEls[from];
+      card.classList.add("leader-outgoing");
+      clearTimeout(card._outTimer);
+      card._outTimer = setTimeout(() => card.classList.remove("leader-outgoing"), 950);
+    }
+    if (to && this.nodeEls[to]) {
+      const card = this.nodeEls[to];
+      card.classList.add("leader-incoming");
+      clearTimeout(card._inTimer);
+      card._inTimer = setTimeout(() => card.classList.remove("leader-incoming"), 1200);
+    }
+    if (from != null && to && from !== to) {
+      this.onLeaderChange?.(from, to);
+    }
+    this._prevLeaderId = to;
+  }
+
+  _syncLeaderSlot(pos, bounds, hasLeader) {
+    const slot = this.leaderSlotEl;
+    if (!slot || !pos._leaderSlot) return;
+    slot.classList.remove("hidden");
+    slot.classList.toggle("filled", hasLeader);
+    slot.classList.toggle("electing", !hasLeader && this.clusterStarted);
+    const animate = slot._placed !== false;
+    if (!slot._placed) {
+      slot._placed = true;
+      placeNode(slot, pos._leaderSlot, bounds, false);
+    } else {
+      placeNode(slot, pos._leaderSlot, bounds, animate);
+    }
   }
 
   _syncClientBeam(leader, pos) {
@@ -207,7 +279,7 @@ export class Renderer {
             fill: "none",
             stroke: "#52525b",
             "stroke-width": "1.5",
-            class: "beam",
+            class: "beam repl-beam",
           }, this.layers.beams);
           this.beamEls[key] = beam;
         }
@@ -237,18 +309,119 @@ export class Renderer {
           <span class="node-term">term —</span>
           <span class="node-commit">commit —</span>
         </div>
+        <div class="node-writes-wrap">
+          <div class="node-writes-head">
+            <span class="node-writes-title">Recent writes</span>
+            <span class="node-sync-badge"></span>
+          </div>
+          <ul class="node-writes"></ul>
+        </div>
         <div class="node-actions running">
-          <button type="button" class="node-action stop" data-action="stop">Stop node</button>
+          <button type="button" class="node-action stop" data-action="stop">Crash node</button>
           <button type="button" class="node-action start" data-action="start">Start node</button>
         </div>
       </div>
     `;
     return card;
   }
+
+  /**
+   * Render each node's recent writes and animate a node catching up after it
+   * restarts. `logsByNode` maps node id -> { running, commitIndex, logLength, entries }.
+   */
+  updateLogs(logsByNode) {
+    const infos = Object.values(logsByNode || {});
+    const leaderCommit = infos.reduce(
+      (m, n) => (n.running ? Math.max(m, n.commitIndex ?? -1) : m),
+      -1
+    );
+
+    for (const id of Object.keys(this.nodeEls)) {
+      const card = this.nodeEls[id];
+      const info = logsByNode?.[id];
+      const listEl = card.querySelector(".node-writes");
+      const badge = card.querySelector(".node-sync-badge");
+      if (!listEl) continue;
+
+      if (!info || (!info.running && (!card._writes || card._writes.length === 0))) {
+        listEl.innerHTML = `<li class="node-write empty">—</li>`;
+        card._writes = card._writes || [];
+        if (badge) badge.textContent = "";
+        continue;
+      }
+
+      if (!info.running) {
+        // Freeze the last-known writes and mark them stale instead of clearing.
+        card.classList.add("writes-stale");
+        if (badge) {
+          badge.textContent = "stale";
+          badge.className = "node-sync-badge stale";
+        }
+        continue;
+      }
+
+      card.classList.remove("writes-stale");
+
+      const entries = (info.entries || []).slice(-4);
+      const prevKeys = new Set(card._writeKeys || []);
+      const commit = info.commitIndex ?? -1;
+
+      const html = entries
+        .map((e) => {
+          const committed = e.index <= commit;
+          const fresh = !prevKeys.has(e.index);
+          const val = e.value ? `=${e.value}` : "";
+          const cls = [
+            "node-write",
+            committed ? "committed" : "pending",
+            fresh && card._everPopulated ? "entry-in" : "",
+          ].join(" ").trim();
+          return `<li class="${cls}"><span class="w-idx">#${e.index}</span>` +
+            `<span class="w-key">${escapeHtml(e.key)}${escapeHtml(val)}</span></li>`;
+        })
+        .join("");
+      listEl.innerHTML = html || `<li class="node-write empty">no writes yet</li>`;
+
+      card._writeKeys = entries.map((e) => e.index);
+      card._writes = entries;
+      card._everPopulated = true;
+
+      const behind = leaderCommit - commit;
+      const wasBehind = card._behind === true;
+      const nowBehind = behind > 1 && leaderCommit >= 0;
+
+      if (badge) {
+        if (nowBehind) {
+          badge.textContent = `behind ${behind}`;
+          badge.className = "node-sync-badge behind";
+        } else if (wasBehind) {
+          badge.textContent = "synced";
+          badge.className = "node-sync-badge synced";
+          card.classList.add("catchup-flash");
+          clearTimeout(card._catchupTimer);
+          card._catchupTimer = setTimeout(() => {
+            card.classList.remove("catchup-flash");
+            badge.textContent = "";
+            badge.className = "node-sync-badge";
+          }, 1400);
+        } else if (!card._catchupTimer) {
+          badge.textContent = "";
+          badge.className = "node-sync-badge";
+        }
+      }
+      card._behind = nowBehind;
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
+  );
 }
 
 function cardRadius(scale) {
-  return 44 * (scale || 1);
+  return 52 * (scale || 1);
 }
 
 function beamPath(from, to) {

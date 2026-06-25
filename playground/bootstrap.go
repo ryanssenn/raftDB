@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/ryansenn/ryanDB/internal/harness"
+	"github.com/ryansenn/quorum/internal/harness"
 )
 
 func (srv *Server) bootstrapCluster(scenarioPath string, demoPace bool) error {

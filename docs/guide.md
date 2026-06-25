@@ -1,8 +1,8 @@
-# RaftDB Internals Guide
+# Quorum Internals Guide
 
 This guide explains what Raft is, how this project implements it, and how to read the Go source. For hands-on exploration, start with the [demo UI](observability.md) (`go run ./playground`; requires Docker Desktop).
 
-RaftDB is a learning project: it runs a real multi-node cluster, but it is not a production database.
+Quorum is a learning project: it runs a real multi-node cluster, but it is not a production database.
 
 After reading this, you should understand why a cluster needs a leader, what the log and commit index mean, and which files to open when you want to trace a write from HTTP to disk.
 
@@ -31,9 +31,9 @@ flowchart LR
 
 ## Raft concepts in this codebase
 
-Raft papers use precise terms. This table maps each term to what it means in RaftDB and where it lives in code.
+Raft papers use precise terms. This table maps each term to what it means in Quorum and where it lives in code.
 
-| Concept | Meaning in RaftDB | Where to look |
+| Concept | Meaning in Quorum | Where to look |
 |---------|-------------------|---------------|
 | **Term** | A monotonic election generation. Each election bumps the term. | `Node.Term` in `core/node.go` |
 | **Leader / Follower / Candidate** | Roles a node can hold. Followers accept entries; candidates ask for votes; the leader replicates. | `NodeState` in `core/node.go` |
@@ -137,7 +137,7 @@ Integration tests in `test/` start real subprocesses, kill nodes, restart them, 
 
 ## Go patterns you will see
 
-RaftDB uses standard Go concurrency tools. You do not need to master all of them before reading, but recognizing them helps.
+Quorum uses standard Go concurrency tools. You do not need to master all of them before reading, but recognizing them helps.
 
 **Goroutines** run the election timer loop and one replication worker per follower. They share the `Node` struct with HTTP handlers and gRPC callbacks, so access to shared fields must be coordinated.
 
@@ -201,7 +201,7 @@ Auto-starts a cluster and runs the scenario. See [playground/README.md](../playg
 
 ## What this project does not implement
 
-RaftDB deliberately stops where a production system would keep going:
+Quorum deliberately stops where a production system would keep going:
 
 - **Log compaction / snapshots**: the log grows forever on disk.
 - **Dynamic membership**: peer list is fixed at startup.

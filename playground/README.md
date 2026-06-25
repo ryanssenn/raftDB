@@ -1,6 +1,6 @@
 # Playground
 
-Web UI for ryanDB. Boots a Raft cluster, runs stress test scenarios, and shows throughput, latency, and consensus metrics.
+Web UI for quorum. Boots a Raft cluster, runs stress test scenarios, and shows throughput, latency, and consensus metrics.
 
 ## Prerequisite
 
@@ -26,7 +26,7 @@ Use `--bootstrap` to auto-start the cluster (the stress test still waits for the
 | `--no-bootstrap` | true | Do not auto-start cluster on launch |
 | `--bootstrap` | false | Auto-start cluster on launch |
 | `--scenario` | full-demo | Scenario path when auto-bootstrapping |
-| `--binary` | auto-build | Path to ryanDB binary |
+| `--binary` | auto-build | Path to quorum binary |
 | `--demo` | true | Compress scenario wait times (ignored when scenario has `"realtime": true`) |
 | `--keep-monitoring` | false | Leave Prometheus/Grafana running after exit |
 

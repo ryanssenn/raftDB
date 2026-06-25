@@ -1,61 +1,54 @@
-# ryanDB
+# Quorum
 
-Go implementation of the [Raft paper](https://raft.github.io/raft.pdf) with an in-memory key-value store on top. This is a learning project: tested and benchmarked, not intended for production.
+A Go implementation of the Raft consensus algorithm with built-in observability. Start a real cluster, run a predefined workload, and inspect consensus and performance metrics through Prometheus.
 
-## Benchmarks
+## Try it
 
-3-node cluster on a single host ([full report](benchmarks/REPORT.md)):
-
-| Metric | Result |
-|--------|--------|
-| Read throughput (peak) | ~72,000 ops/sec |
-| Write throughput (64 clients) | ~19,500 ops/sec |
-| Read latency, p99 (16 clients) | ~1.3 ms |
-| Write latency, p99 (16 clients) | ~4 ms |
-| Failover recovery after leader crash | ~327 ms |
-
-Reproduce:
-
-```bash
-go run ./benchmarks --quick --concurrency=1,16,64
-```
-
-## Optimizations
-
-The write path (consensus, replication, disk) was profiled and tuned. Each change was benchmarked in isolation. Full numbers and methodology: [OPTIMIZATIONS.md](OPTIMIZATIONS.md). Ideas not yet tried: [docs/performance.md](docs/performance.md).
-
-On a 3-node cluster, cumulative changes raised write throughput at 64 clients from ~2.4k to ~20k ops/s (about 8x) and cut write p99 latency from ~60 ms to ~6 ms (about 10x). Read throughput stayed near ~70k ops/s because reads skip consensus.
-
-| Change | Effect |
-|--------|--------|
-| Skip replication sleep | Replicators sleep only on idle heartbeats, not after every successful AppendEntries |
-| Group commit | Batch log appends and `fsync` once before replication |
-| Single fsync per batch | Leader skips redundant syncs when the log is already flushed |
-| Cached serialized entries | Log entries store pre-marshaled bytes to avoid re-encoding on every RPC |
-| Wake replicators on append | New writes signal idle follower goroutines immediately |
-| Remove replication backoff | Retry log mismatches without a 1 ms delay |
-
-## Observability
-
-Each node exports Prometheus metrics at `/metrics`: Raft state (term, role, commit index, apply lag, log length), RPC counters (elections, commits, AppendEntries, RequestVote), and client request volume and latency histograms.
-
-The playground adds cluster-level gauges (replication lag, leader count, nodes running) and a scenario runner that drives load and node failures while updating scrape targets in `monitoring/targets.json`. Prometheus starts via Docker and reloads those targets automatically. Aggregated live stats (throughput, p99 latency, commit rate, replication lag, election rate) are available at `GET /api/metrics/live`.
-
-**Prerequisite:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) running.
+Prerequisite: [Docker Desktop](https://www.docker.com/products/docker-desktop/) must be running (used to start Prometheus).
 
 ```bash
 go run ./playground
 ```
 
-Opens http://localhost:8080. Click **Run stress test** to boot a 5-node cluster and run the full scenario.
+This command:
 
-Full metrics reference: [docs/observability.md](docs/observability.md). Playground API and flags: [playground/README.md](playground/README.md).
+1. Starts Prometheus in Docker.
+2. Opens [http://localhost:8080](http://localhost:8080).
+3. Lets you start a 5-node cluster and run a 45-second workload.
+
+Metrics are documented in [docs/observability.md](docs/observability.md).
+
+## Optimizations
+
+The write path (consensus, log replication, and disk persistence) was profiled, optimized, and re-benchmarked after every change. An optimization was kept only if it produced a measurable, repeatable improvement; changes that didn't move the numbers were reverted.
+
+On a 3-node cluster at 64 concurrent clients, the optimization work took write throughput from 2,444 to 20,249 ops/s (8.3×) and write p99 latency from 60.19 ms to 6.09 ms (9.9×). Read throughput was unaffected (~69,000 ops/s): reads are served directly from the leader's state machine and never enter the Raft log.
+
+Full methodology, including the smaller tweaks and the changes that were tried and reverted, is in [OPTIMIZATIONS.md](OPTIMIZATIONS.md).
+
+To reproduce the benchmarks:
+
+```bash
+go run ./benchmarks --quick --concurrency=1,16,64
+```
+
+## Benchmarks
+
+Results from a 3-node cluster on a single host ([full report](benchmarks/REPORT.md)); measured on a Cursor Cloud VM (4 vCPUs, 16 GB RAM, Go 1.24.0) with all nodes on loopback.
+
+| Metric                          | Result          |
+| ------------------------------- | --------------- |
+| Peak read throughput            | 72,356 ops/s    |
+| Write throughput (64 clients)   | 19,463 ops/s    |
+| Read latency, p99 (16 clients)  | 1.33 ms         |
+| Write latency, p99 (16 clients) | 4.0 ms          |
+| Leader failover recovery        | 327 ms          |
 
 ## Raft implementation
 
-Each node exposes HTTP for clients (`/get`, `/put`, `/status`) and gRPC for Raft RPCs (votes, log replication, command forwarding). Consensus logic lives in `core/`; persistence goes to `logs/*.rlog` and `logs/*.meta`.
+An implementation of the Raft consensus algorithm from the original paper, with a simple in-memory key-value store built on top of the replicated log.
 
-Code walkthrough: [docs/guide.md](docs/guide.md)
+Implementation guide: [docs/guide.md](docs/guide.md)
 
 ## Tests
 
@@ -65,23 +58,21 @@ go test -v ./test
 go test ./playground/...
 ```
 
-Integration tests in `test/` build the binary and run a real five-node cluster.
-
 ## Running a cluster manually
 
-Each node needs an HTTP port (`--port`) and a gRPC address in `--peers` (`id=host:port`). You need at least three nodes for a quorum.
+Each node requires an HTTP port (`--port`) and a gRPC endpoint specified in `--peers` using the format `id=host:port`. At least three nodes are required.
 
 ```bash
-go build -o ryanDB .
+go build -o quorum .
 
-./ryanDB \
+./quorum \
   --id=node1 \
   --port=8001 \
   --peers=node1=127.0.0.1:9001,node2=127.0.0.1:9002,node3=127.0.0.1:9003 \
   --reset=true
 ```
 
-Per-node Prometheus metrics: `/metrics` (disable with `--metrics=false`).
+Each node exposes Prometheus metrics at `/metrics`. Disable metrics with `--metrics=false`.
 
 ## Not yet implemented
 

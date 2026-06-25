@@ -21,10 +21,13 @@ type GetStep struct {
 }
 
 type LoadStep struct {
-	Duration    string `json:"duration"`
-	Interval    string `json:"interval,omitempty"`
-	KeyPrefix   string `json:"keyPrefix"`
-	Concurrency int    `json:"concurrency,omitempty"`
+	Duration        string `json:"duration"`
+	Interval        string `json:"interval,omitempty"`
+	KeyPrefix       string `json:"keyPrefix"`
+	Concurrency     int    `json:"concurrency,omitempty"`
+	ReadConcurrency int    `json:"readConcurrency,omitempty"`
+	WriteRPS        int    `json:"writeRps,omitempty"`
+	ReadRPS         int    `json:"readRps,omitempty"`
 }
 
 type PartitionStep struct {

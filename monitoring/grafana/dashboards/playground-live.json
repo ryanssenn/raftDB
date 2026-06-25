@@ -17,7 +17,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(raftdb_client_requests_total{op=\"put\",result=\"success\"}[30s]))",
+          "expr": "sum(rate(quorum_client_requests_total{op=\"put\",result=\"success\"}[30s]))",
           "legendFormat": "writes/s",
           "refId": "A"
         }
@@ -52,7 +52,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(raftdb_client_requests_total{op=\"get\",result=\"success\"}[30s]))",
+          "expr": "sum(rate(quorum_client_requests_total{op=\"get\",result=\"success\"}[30s]))",
           "legendFormat": "reads/s",
           "refId": "A"
         }
@@ -87,13 +87,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, sum(rate(raftdb_client_request_duration_seconds_bucket{op=\"put\"}[30s])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(quorum_client_request_duration_seconds_bucket{op=\"put\"}[30s])) by (le)) * 1000",
           "legendFormat": "write p99",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, sum(rate(raftdb_client_request_duration_seconds_bucket{op=\"get\"}[30s])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(quorum_client_request_duration_seconds_bucket{op=\"get\"}[30s])) by (le)) * 1000",
           "legendFormat": "read p99",
           "refId": "B"
         }
@@ -138,7 +138,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max(raftdb_replication_lag)",
+          "expr": "max(quorum_replication_lag)",
           "legendFormat": "max lag",
           "refId": "A"
         }

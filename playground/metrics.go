@@ -10,32 +10,32 @@ import (
 
 var (
 	replicationLag = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_replication_lag",
+		Name: "quorum_replication_lag",
 		Help: "Commit index lag vs current leader.",
 	}, []string{"node"})
 
 	leaderCount = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "raftdb_leader_count",
+		Name: "quorum_leader_count",
 		Help: "Number of nodes reporting leader state.",
 	})
 
 	clusterNodes = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "raftdb_cluster_nodes",
+		Name: "quorum_cluster_nodes",
 		Help: "Configured cluster size.",
 	})
 
 	nodesRunning = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "raftdb_nodes_running",
+		Name: "quorum_nodes_running",
 		Help: "Number of node processes currently running.",
 	})
 
 	scenarioStep = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "raftdb_scenario_step",
+		Name: "quorum_scenario_step",
 		Help: "Current scenario step index.",
 	}, []string{"scenario"})
 
 	scenarioRunning = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "raftdb_scenario_running",
+		Name: "quorum_scenario_running",
 		Help: "1 if a scenario is running.",
 	})
 )

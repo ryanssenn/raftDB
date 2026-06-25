@@ -1,6 +1,6 @@
 # Testing & Correctness
 
-RaftDB validates its Raft implementation with unit tests (isolated logic) and integration tests (real multi-node clusters). The playground adds API tests for the scenario runner and metrics layer.
+Quorum validates its Raft implementation with unit tests (isolated logic) and integration tests (real multi-node clusters). The playground adds API tests for the scenario runner and metrics layer.
 
 ## Commands
 

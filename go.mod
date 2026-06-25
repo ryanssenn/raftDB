@@ -1,4 +1,4 @@
-module github.com/ryansenn/ryanDB
+module github.com/ryansenn/quorum
 
 go 1.24.0
 

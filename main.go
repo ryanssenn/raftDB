@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ryansenn/ryanDB/core"
+	"github.com/ryansenn/quorum/core"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 

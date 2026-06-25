@@ -40,6 +40,31 @@ func fetchStatus(port string) (*NodeStatus, error) {
 	return &s, nil
 }
 
+type LogEntryView struct {
+	Index int64  `json:"index"`
+	Term  int64  `json:"term"`
+	Op    string `json:"op"`
+	Key   string `json:"key"`
+	Value string `json:"value,omitempty"`
+}
+
+func fetchLogTail(port string, tail int) ([]LogEntryView, error) {
+	url := fmt.Sprintf("http://localhost:%s/log?tail=%d", port, tail)
+	resp, err := playgroundHTTPClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Entries []LogEntryView `json:"entries"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload.Entries, nil
+}
+
 func doPut(port, key, value, client string) (string, error) {
 	params := url.Values{}
 	params.Set("key", key)

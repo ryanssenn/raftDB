@@ -1,7 +1,7 @@
-# RaftDB Benchmarks
+# Quorum Benchmarks
 
-A self-contained load-testing harness for the RaftDB key-value store. It builds
-the `ryanDB` binary, launches a real multi-node cluster (HTTP `8001+` / gRPC
+A self-contained load-testing harness for the Quorum key-value store. It builds
+the `quorum` binary, launches a real multi-node cluster (HTTP `8001+` / gRPC
 `9001+`, exactly like the integration tests), drives it with closed-loop client
 workers over the HTTP API, and records **per-request latency samples** so
 percentiles are computed from raw data rather than pre-averaged windows.

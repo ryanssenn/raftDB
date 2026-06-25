@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	pb "github.com/ryansenn/ryanDB/proto/nodepb"
+	pb "github.com/ryansenn/quorum/proto/nodepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"

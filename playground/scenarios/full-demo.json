@@ -4,15 +4,15 @@
   "realtime": true,
   "steps": [
     { "wait": "2s", "comment": "leader election" },
-    { "load": { "duration": "15s", "concurrency": 32, "keyPrefix": "tx" }, "comment": "stress load" },
+    { "load": { "duration": "15s", "concurrency": 32, "readConcurrency": 16, "keyPrefix": "tx" }, "comment": "stress load" },
     { "kill": "node4", "comment": "follower failure" },
-    { "load": { "duration": "10s", "concurrency": 32, "keyPrefix": "tx" }, "comment": "load through failure" },
+    { "load": { "duration": "10s", "concurrency": 32, "readConcurrency": 16, "keyPrefix": "tx" }, "comment": "load through failure" },
     { "restart": "node4", "comment": "follower recovery" },
-    { "load": { "duration": "8s", "concurrency": 32, "keyPrefix": "tx" }, "comment": "pre-failover load" },
+    { "load": { "duration": "8s", "concurrency": 32, "readConcurrency": 16, "keyPrefix": "tx" }, "comment": "pre-failover load" },
     { "kill": "leader", "comment": "leader failure" },
     { "wait": "4s", "comment": "failover election" },
-    { "load": { "duration": "12s", "concurrency": 32, "keyPrefix": "tx" }, "comment": "post-failover load" },
+    { "load": { "duration": "12s", "concurrency": 32, "readConcurrency": 16, "keyPrefix": "tx" }, "comment": "post-failover load" },
     { "restart": "killed", "comment": "revive former leader" },
-    { "load": { "duration": "5s", "concurrency": 32, "keyPrefix": "tx" }, "comment": "steady state" }
+    { "load": { "duration": "5s", "concurrency": 32, "readConcurrency": 16, "keyPrefix": "tx" }, "comment": "steady state" }
   ]
 }

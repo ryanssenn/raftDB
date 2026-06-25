@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ryansenn/ryanDB/internal/harness"
+	"github.com/ryansenn/quorum/internal/harness"
 )
 
 // Prevent integration tests from hanging until go test's default timeout.
@@ -24,7 +24,7 @@ var testHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 var (
 	repoRoot  = filepath.Join(filepath.Dir(getTestFile()), "..")
-	binary    = filepath.Join(repoRoot, "ryanDB")
+	binary    = filepath.Join(repoRoot, "quorum")
 	buildOnce sync.Once
 )
 
@@ -43,7 +43,7 @@ func buildBinary(t *testing.T) {
 		cmd.Dir = repoRoot
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("failed to build ryanDB: %v\n%s", err, out)
+			t.Fatalf("failed to build quorum: %v\n%s", err, out)
 		}
 	})
 }

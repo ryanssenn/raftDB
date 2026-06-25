@@ -1,7 +1,7 @@
 import { SVG_NS } from "./renderer.js";
 
 const FLOW_COLORS = {
-  put: "#22d3ee",
+  put: "#60a5fa",
   forward: "#2dd4bf",
   append: "#c4b5fd",
   commit: "#4ade80",
@@ -9,14 +9,14 @@ const FLOW_COLORS = {
 };
 
 const FLOW_DURATIONS = {
-  put: 320,
-  forward: 280,
-  append: 360,
-  commit: 400,
-  state_change: 480,
+  put: 420,
+  forward: 380,
+  append: 520,
+  commit: 580,
+  state_change: 640,
 };
 
-const MAX_FLOWS = 12;
+const MAX_FLOWS = 48;
 
 export class AnimationEngine {
   constructor(layer) {
@@ -25,14 +25,17 @@ export class AnimationEngine {
     this.raf = null;
   }
 
-  spawnFlow(from, to, pos, type, label, opts = {}) {
-    if (this.flows.length >= MAX_FLOWS) return;
+  spawnFlow(from, to, pos, type, opts = {}) {
+    if (this.flows.length >= MAX_FLOWS) {
+      const oldest = this.flows.shift();
+      oldest?.g?.remove();
+    }
 
     const fp = this._point(from, pos, "from");
     const tp = this._point(to, pos, "to");
     if (!fp || !tp) return;
 
-    const curve = opts.curve ?? 28;
+    const curve = opts.curve ?? 22;
     const mid = {
       x: (fp.x + tp.x) / 2,
       y: (fp.y + tp.y) / 2 - curve,
@@ -49,19 +52,19 @@ export class AnimationEngine {
     );
     trail.setAttribute("fill", "none");
     trail.setAttribute("stroke", color);
-    trail.setAttribute("stroke-width", "1.5");
-    trail.setAttribute("opacity", "0.12");
+    trail.setAttribute("stroke-width", type === "append" ? "2" : "1.5");
+    trail.setAttribute("opacity", type === "append" ? "0.35" : "0.2");
     g.appendChild(trail);
 
     const dot = document.createElementNS(SVG_NS, "circle");
-    dot.setAttribute("r", opts.r ?? 4);
+    dot.setAttribute("r", opts.r ?? (type === "append" ? 3.5 : 4));
     dot.setAttribute("fill", color);
-    dot.setAttribute("opacity", "0.75");
+    dot.setAttribute("opacity", "0.9");
     g.appendChild(dot);
 
     this.layer.appendChild(g);
 
-    const duration = opts.duration ?? FLOW_DURATIONS[type] ?? 400;
+    const duration = opts.duration ?? FLOW_DURATIONS[type] ?? 240;
     this.flows.push({
       g,
       dot,
@@ -75,6 +78,15 @@ export class AnimationEngine {
     this._ensureTick();
   }
 
+  /** Leader → followers replication burst */
+  spawnReplication(leaderId, followerIds, pos) {
+    if (!leaderId || !pos[leaderId]) return;
+    for (const fid of followerIds) {
+      if (fid === leaderId || !pos[fid]) continue;
+      this.spawnFlow(leaderId, fid, pos, "append", { curve: 18 + Math.random() * 14 });
+    }
+  }
+
   tick(now = performance.now()) {
     this.flows = this.flows.filter((f) => {
       const t = Math.min(1, (now - f.start) / f.duration);
@@ -83,7 +95,7 @@ export class AnimationEngine {
       const y = u * u * f.fp.y + 2 * u * t * f.mid.y + t * t * f.tp.y;
       f.dot.setAttribute("cx", x);
       f.dot.setAttribute("cy", y);
-      f.dot.setAttribute("opacity", String(0.75 * (1 - t * 0.5)));
+      f.dot.setAttribute("opacity", String(0.9 * (1 - t * 0.6)));
       if (t >= 1) {
         f.g.remove();
         return false;
@@ -104,6 +116,16 @@ export class AnimationEngine {
     }
   }
 
+  /** Immediately remove all in-flight flow packets. */
+  clear() {
+    for (const f of this.flows) f.g?.remove();
+    this.flows = [];
+    if (this.raf != null) {
+      cancelAnimationFrame(this.raf);
+      this.raf = null;
+    }
+  }
+
   _point(id, pos, role) {
     if (id === "client") {
       const p = pos.client;
@@ -113,7 +135,7 @@ export class AnimationEngine {
     if (!p) return null;
     const edge = (p.scale || 1) * 40;
     if (role === "from") {
-      return { x: p.x, y: p.y + edge };
+      return { x: p.x, y: p.y + edge * 0.3 };
     }
     return { x: p.x, y: p.y - edge };
   }

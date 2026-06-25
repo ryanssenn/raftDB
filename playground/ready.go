@@ -96,7 +96,7 @@ func quorumNeeded(nodeCount int) int {
 
 func prometheusTargetCount() (int, error) {
 	q := url.Values{}
-	q.Set("query", `count(up{job="ryanDB"}==1)`)
+	q.Set("query", `count(up{job="quorum"}==1)`)
 	resp, err := http.Get("http://localhost:9090/api/v1/query?" + q.Encode())
 	if err != nil {
 		return 0, err

@@ -1,8 +1,8 @@
 # Performance improvement opportunities
 
-This document outlines realistic ways to improve RaftDB throughput and latency. It is based on the current implementation, the [benchmark report](../benchmarks/REPORT.md), and common practice in production Raft systems (etcd, TiKV, CockroachDB).
+This document outlines realistic ways to improve Quorum throughput and latency. It is based on the current implementation, the [benchmark report](../benchmarks/REPORT.md), and common practice in production Raft systems (etcd, TiKV, CockroachDB).
 
-RaftDB is an educational project. Many of these changes add complexity or weaken durability guarantees. They are listed here as a roadmap, not as a mandate to turn this into a production database.
+Quorum is an educational project. Many of these changes add complexity or weaken durability guarantees. They are listed here as a roadmap, not as a mandate to turn this into a production database.
 
 ---
 

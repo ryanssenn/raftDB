@@ -1,6 +1,6 @@
 {
-  "uid": "raft-playground",
-  "title": "ryanDB",
+  "uid": "quorum-playground",
+  "title": "Quorum",
   "tags": ["raft", "playground"],
   "timezone": "browser",
   "schemaVersion": 39,
@@ -14,7 +14,7 @@
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_leader_count", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "quorum_leader_count", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -33,7 +33,7 @@
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(raftdb_term)", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(quorum_term)", "refId": "A" }]
     },
     {
       "id": 3,
@@ -41,7 +41,7 @@
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_nodes_running", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "quorum_nodes_running", "refId": "A" }]
     },
     {
       "id": 4,
@@ -49,7 +49,7 @@
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(raftdb_commit_index) - min(raftdb_commit_index)", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(quorum_commit_index) - min(quorum_commit_index)", "refId": "A" }]
     },
     {
       "id": 5,
@@ -57,7 +57,7 @@
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_commit_index", "legendFormat": "{{node}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "quorum_commit_index", "legendFormat": "{{node}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2 } } }
     },
     {
@@ -66,7 +66,7 @@
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "raftdb_replication_lag", "legendFormat": "{{node}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "quorum_replication_lag", "legendFormat": "{{node}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2 } } }
     },
     {
@@ -75,7 +75,7 @@
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(raftdb_elections_total[1m]))", "legendFormat": "elections/s", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(quorum_elections_total[1m]))", "legendFormat": "elections/s", "refId": "A" }]
     },
     {
       "id": 10,
@@ -83,7 +83,7 @@
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(raftdb_commits_total[1m]))", "legendFormat": "commits/s", "refId": "A" }]
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(quorum_commits_total[1m]))", "legendFormat": "commits/s", "refId": "A" }]
     }
   ]
 }

@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ryansenn/ryanDB/internal/harness"
+	"github.com/ryansenn/quorum/internal/harness"
 )
 
 type Server struct {
@@ -76,23 +76,36 @@ func (srv *Server) requestShutdown() {
 }
 
 // Stop halts any running scenario, load workers, and cluster nodes.
-func (srv *Server) Stop() {
+func (srv *Server) stopScenarioAndWait() {
 	srv.mu.Lock()
 	running := srv.scenarioRunning
 	stopCh := srv.scenarioStop
 	doneCh := srv.scenarioDone
 	srv.mu.Unlock()
 
-	if running && stopCh != nil {
+	if !running {
+		return
+	}
+
+	if stopCh != nil {
 		select {
 		case <-stopCh:
 		default:
 			close(stopCh)
 		}
-		if doneCh != nil {
-			<-doneCh
-		}
 	}
+	if doneCh != nil {
+		<-doneCh
+	}
+
+	srv.mu.Lock()
+	srv.scenarioRunning = false
+	srv.done = true
+	srv.mu.Unlock()
+}
+
+func (srv *Server) Stop() {
+	srv.stopScenarioAndWait()
 
 	srv.mu.Lock()
 	srv.cluster.StopAll()
@@ -107,7 +120,10 @@ func (srv *Server) handleQuit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
-	go srv.requestShutdown()
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	srv.requestShutdown()
 }
 
 func (srv *Server) appendLog(line string) {
@@ -156,6 +172,49 @@ func (srv *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 		"partitionActive": srv.partitionActive,
 		"partitionNodes":  srv.partitionNodes,
 	})
+}
+
+type nodeLogView struct {
+	ID          string         `json:"id"`
+	Running     bool           `json:"running"`
+	CommitIndex int64          `json:"commitIndex"`
+	LogLength   int            `json:"logLength"`
+	Entries     []LogEntryView `json:"entries"`
+}
+
+// handleClusterLogs returns the most recent log entries for each node so the UI
+// can show a per-node write history and animate a follower catching up after it
+// restarts. Node logs are fetched concurrently to keep latency low.
+func (srv *Server) handleClusterLogs(w http.ResponseWriter, r *http.Request) {
+	const tail = 8
+
+	srv.mu.RLock()
+	nodes := append([]*ClusterNode(nil), srv.cluster.Nodes...)
+	srv.mu.RUnlock()
+
+	views := make([]nodeLogView, len(nodes))
+	var wg sync.WaitGroup
+	for i, node := range nodes {
+		views[i] = nodeLogView{ID: node.ID, Running: node.Running, CommitIndex: -1}
+		if !node.Running {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, port string) {
+			defer wg.Done()
+			if st, err := fetchStatus(port); err == nil {
+				views[idx].CommitIndex = st.CommitIndex
+				views[idx].LogLength = st.LogLength
+			}
+			if entries, err := fetchLogTail(port, tail); err == nil {
+				views[idx].Entries = entries
+			}
+		}(i, node.Port)
+	}
+	wg.Wait()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"nodes": views})
 }
 
 func (srv *Server) handleClusterCreate(w http.ResponseWriter, r *http.Request) {
@@ -416,15 +475,52 @@ func (srv *Server) handleStressTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	scenario, err := LoadScenario(resolveScenarioPath(fullDemoScenario))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	var req struct {
+		WriteRps int `json:"writeRps"`
+		ReadRps  int `json:"readRps"`
+		Nodes    int `json:"nodes"`
 	}
-	if err := srv.ensureCluster(scenario.Nodes); err != nil {
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if req.WriteRps <= 0 {
+		req.WriteRps = 2000
+	}
+	if req.ReadRps < 0 {
+		req.ReadRps = 0
+	}
+	nodeCount := req.Nodes
+	if nodeCount <= 0 {
+		nodeCount = 5
+	}
+
+	scenario := &Scenario{
+		Name:     "Continuous stress",
+		Nodes:    nodeCount,
+		Realtime: true,
+		Steps: []Step{{
+			Comment: "continuous load",
+			Load: &LoadStep{
+				Duration:    "forever",
+				KeyPrefix:   "tx",
+				WriteRPS:    req.WriteRps,
+				ReadRPS:     req.ReadRps,
+				Concurrency: stressWorkerCount(req.WriteRps, 16, 64),
+			},
+		}},
+	}
+	readWorkers := 0
+	if req.ReadRps > 0 {
+		readWorkers = stressWorkerCount(req.ReadRps, 8, 32)
+	}
+	scenario.Steps[0].Load.ReadConcurrency = readWorkers
+
+	if err := srv.ensureCluster(nodeCount); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	srv.stopScenarioAndWait()
+
 	srv.mu.Lock()
 	if srv.scenarioRunning {
 		srv.mu.Unlock()
@@ -437,14 +533,12 @@ func (srv *Server) handleStressTest(w http.ResponseWriter, r *http.Request) {
 	srv.err = ""
 	srv.writeCount = 0
 	srv.lastWrite = WriteEvent{}
-	if scenario.Realtime {
-		srv.demoPace = false
-	}
+	srv.demoPace = false
 	srv.scenarioRunning = true
 	srv.scenarioPaused = false
 	srv.scenarioStop = make(chan struct{})
 	srv.scenarioDone = make(chan struct{})
-	srv.appendLog("running stress test: " + scenario.Name)
+	srv.appendLog(fmt.Sprintf("stress test started: %d write/s, %d read/s", req.WriteRps, req.ReadRps))
 	srv.mu.Unlock()
 
 	go func() {
@@ -455,7 +549,35 @@ func (srv *Server) handleStressTest(w http.ResponseWriter, r *http.Request) {
 		srv.mu.Unlock()
 	}()
 
-	json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": scenario.Name})
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":       true,
+		"name":     scenario.Name,
+		"writeRps": req.WriteRps,
+		"readRps":  req.ReadRps,
+	})
+}
+
+func (srv *Server) handleStressStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	srv.mu.Lock()
+	if !srv.scenarioRunning {
+		srv.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "running": false})
+		return
+	}
+	srv.mu.Unlock()
+
+	srv.stopScenarioAndWait()
+
+	srv.mu.Lock()
+	srv.appendLog("stress test stopped")
+	srv.mu.Unlock()
+
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "running": false})
 }
 
 func resolveScenarioPath(path string) string {
@@ -561,8 +683,10 @@ func (srv *Server) registerRoutes(mux *http.ServeMux, static http.Handler) {
 	mux.HandleFunc("/metrics", srv.handleMetrics)
 	mux.HandleFunc("/api/scenario/stress-test", srv.handleStressTest)
 	mux.HandleFunc("/api/scenario/demo", srv.handleStressTest)
+	mux.HandleFunc("/api/stress/stop", srv.handleStressStop)
 	mux.Handle("/", static)
 	mux.HandleFunc("/api/cluster/status", srv.handleClusterStatus)
+	mux.HandleFunc("/api/cluster/logs", srv.handleClusterLogs)
 	mux.HandleFunc("/api/cluster/create", srv.handleClusterCreate)
 	mux.HandleFunc("/api/cluster/start", srv.handleClusterStart)
 	mux.HandleFunc("/api/cluster/stop", srv.handleClusterStop)

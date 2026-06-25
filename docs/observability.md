@@ -1,12 +1,12 @@
 # Observability Guide
 
-Reference for metrics, PromQL queries, Grafana panels, and alerts when monitoring a live Raft cluster with ryanDB.
+Reference for metrics, PromQL queries, Grafana panels, and alerts when monitoring a live Raft cluster with quorum.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  Scenarios[Scenario runner] --> Nodes[ryanDB nodes]
+  Scenarios[Scenario runner] --> Nodes[quorum nodes]
   Nodes -->|"/metrics"| Prom[Prometheus]
   Playground[Playground :8080] -->|cluster metrics| Prom
   Prom --> Graf[Grafana :3000]
@@ -21,27 +21,27 @@ Each node exposes Prometheus metrics at `/metrics`. The playground aggregates cl
 
 | Metric | Type | Labels | Meaning | Visualization |
 |---|---|---|---|---|
-| `raftdb_state` | Gauge | `node` | 0=follower, 1=candidate, 2=leader | Stat panel or state timeline per node |
-| `raftdb_is_leader` | Gauge | `node` | 1 if leader | Leader identity stat with threshold coloring |
-| `raftdb_term` | Gauge | `node` | Current Raft term | Time series; spikes indicate elections |
-| `raftdb_commit_index` | Gauge | `node` | Highest committed log index | Multi-series line; converging lines = healthy replication |
-| `raftdb_last_applied` | Gauge | `node` | Highest applied log index | Line chart per node |
-| `raftdb_apply_lag` | Gauge | `node` | `commit_index - last_applied` | Line; sustained lag = slow apply loop |
-| `raftdb_log_length` | Gauge | `node` | Number of log entries | Line; divergence hints replication issues |
-| `up{job="ryanDB"}` | Gauge | `instance` | Scrape success | Node up/down table |
+| `quorum_state` | Gauge | `node` | 0=follower, 1=candidate, 2=leader | Stat panel or state timeline per node |
+| `quorum_is_leader` | Gauge | `node` | 1 if leader | Leader identity stat with threshold coloring |
+| `quorum_term` | Gauge | `node` | Current Raft term | Time series; spikes indicate elections |
+| `quorum_commit_index` | Gauge | `node` | Highest committed log index | Multi-series line; converging lines = healthy replication |
+| `quorum_last_applied` | Gauge | `node` | Highest applied log index | Line chart per node |
+| `quorum_apply_lag` | Gauge | `node` | `commit_index - last_applied` | Line; sustained lag = slow apply loop |
+| `quorum_log_length` | Gauge | `node` | Number of log entries | Line; divergence hints replication issues |
+| `up{job="quorum"}` | Gauge | `instance` | Scrape success | Node up/down table |
 
 **Useful PromQL**
 
 ```promql
 # Current leader
-max by (node) (raftdb_is_leader == 1)
+max by (node) (quorum_is_leader == 1)
 
 # Cluster commit spread
-max(raftdb_commit_index) - min(raftdb_commit_index)
+max(quorum_commit_index) - min(quorum_commit_index)
 
 # Apply lag per node
-raftdb_commit_index - raftdb_last_applied
-# or use raftdb_apply_lag directly
+quorum_commit_index - quorum_last_applied
+# or use quorum_apply_lag directly
 ```
 
 ---
@@ -50,22 +50,22 @@ raftdb_commit_index - raftdb_last_applied
 
 | Metric | Type | Labels | Source | Visualization |
 |---|---|---|---|---|
-| `raftdb_replication_lag` | Gauge | `node` | Playground | Line; spikes during load or partition |
-| `raftdb_leader_count` | Gauge | - | Playground | Stat; alert when `!= 1` |
-| `raftdb_cluster_nodes` | Gauge | - | Playground | Configured cluster size |
-| `raftdb_nodes_running` | Gauge | - | Playground | Processes currently up |
+| `quorum_replication_lag` | Gauge | `node` | Playground | Line; spikes during load or partition |
+| `quorum_leader_count` | Gauge | - | Playground | Stat; alert when `!= 1` |
+| `quorum_cluster_nodes` | Gauge | - | Playground | Configured cluster size |
+| `quorum_nodes_running` | Gauge | - | Playground | Processes currently up |
 
 **Useful PromQL**
 
 ```promql
 # Split brain or no leader
-raftdb_leader_count
+quorum_leader_count
 
 # Worst follower lag
-max(raftdb_replication_lag)
+max(quorum_replication_lag)
 
 # Nodes reachable by Prometheus
-count(up{job="ryanDB"} == 1)
+count(up{job="quorum"} == 1)
 ```
 
 ---
@@ -74,20 +74,20 @@ count(up{job="ryanDB"} == 1)
 
 | Metric | Type | Labels | Meaning | Visualization |
 |---|---|---|---|---|
-| `raftdb_elections_total` | Counter | `node` | Elections started | `rate(...[1m])` bar gauge |
-| `raftdb_commits_total` | Counter | `node` | Commits as leader | `rate(...[1m])` line during load |
-| `raftdb_append_entries_total` | Counter | `node`, `result` | AppendEntries outcomes | Stacked area by result |
-| `raftdb_requestvote_total` | Counter | `node`, `result` | Vote RPC outcomes | Line by result |
+| `quorum_elections_total` | Counter | `node` | Elections started | `rate(...[1m])` bar gauge |
+| `quorum_commits_total` | Counter | `node` | Commits as leader | `rate(...[1m])` line during load |
+| `quorum_append_entries_total` | Counter | `node`, `result` | AppendEntries outcomes | Stacked area by result |
+| `quorum_requestvote_total` | Counter | `node`, `result` | Vote RPC outcomes | Line by result |
 
 **Useful PromQL**
 
 ```promql
-rate(raftdb_elections_total[1m])
-rate(raftdb_commits_total[1m])
-rate(raftdb_append_entries_total{result="success"}[1m])
-rate(raftdb_append_entries_total{result="failure"}[1m])
-rate(raftdb_append_entries_total{result="error"}[1m])
-rate(raftdb_requestvote_total{result="granted"}[1m])
+rate(quorum_elections_total[1m])
+rate(quorum_commits_total[1m])
+rate(quorum_append_entries_total{result="success"}[1m])
+rate(quorum_append_entries_total{result="failure"}[1m])
+rate(quorum_append_entries_total{result="error"}[1m])
+rate(quorum_requestvote_total{result="granted"}[1m])
 ```
 
 ---
@@ -96,16 +96,16 @@ rate(raftdb_requestvote_total{result="granted"}[1m])
 
 | Metric | Type | Labels | Meaning | Visualization |
 |---|---|---|---|---|
-| `raftdb_client_requests_total` | Counter | `op`, `result`, `node` | HTTP put/get volume | Rate by op and result |
-| `raftdb_client_request_duration_seconds` | Histogram | `op`, `node` | Request latency | Heatmap or p50/p99 |
-| `raftdb_scenario_step` | Gauge | `scenario` | Current step index | Stat panel |
-| `raftdb_scenario_running` | Gauge | — | 1 if scenario active | Stat panel |
+| `quorum_client_requests_total` | Counter | `op`, `result`, `node` | HTTP put/get volume | Rate by op and result |
+| `quorum_client_request_duration_seconds` | Histogram | `op`, `node` | Request latency | Heatmap or p50/p99 |
+| `quorum_scenario_step` | Gauge | `scenario` | Current step index | Stat panel |
+| `quorum_scenario_running` | Gauge | — | 1 if scenario active | Stat panel |
 
 **Useful PromQL**
 
 ```promql
-sum by (op) (rate(raftdb_client_requests_total[1m]))
-histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_seconds_bucket[5m])))
+sum by (op) (rate(quorum_client_requests_total[1m]))
+histogram_quantile(0.99, sum by (le, op) (rate(quorum_client_request_duration_seconds_bucket[5m])))
 ```
 
 ---
@@ -114,27 +114,27 @@ histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_se
 
 ### Row 1: Cluster health
 
-- **Leader count** — `raftdb_leader_count` (threshold: green=1, red otherwise)
-- **Current term** — `max(raftdb_term)`
-- **Nodes running** — `raftdb_nodes_running / raftdb_cluster_nodes`
-- **Commit spread** — `max(raftdb_commit_index) - min(raftdb_commit_index)`
+- **Leader count** — `quorum_leader_count` (threshold: green=1, red otherwise)
+- **Current term** — `max(quorum_term)`
+- **Nodes running** — `quorum_nodes_running / quorum_cluster_nodes`
+- **Commit spread** — `max(quorum_commit_index) - min(quorum_commit_index)`
 
 ### Row 2: Consensus and replication
 
-- **Commit index by node** — `raftdb_commit_index`
-- **Replication lag by node** — `raftdb_replication_lag`
-- **Apply lag by node** — `raftdb_apply_lag`
+- **Commit index by node** — `quorum_commit_index`
+- **Replication lag by node** — `quorum_replication_lag`
+- **Apply lag by node** — `quorum_apply_lag`
 
 ### Row 3: Activity and stability
 
-- **Election rate** — `rate(raftdb_elections_total[1m])`
-- **Commit rate** — `rate(raftdb_commits_total[1m])`
+- **Election rate** — `rate(quorum_elections_total[1m])`
+- **Commit rate** — `rate(quorum_commits_total[1m])`
 - **AppendEntries success vs failure** — rates by `result`
 
 ### Row 4: Scenario context
 
-- **Scenario step** — `raftdb_scenario_step`
-- **Scenario running** — `raftdb_scenario_running`
+- **Scenario step** — `quorum_scenario_step`
+- **Scenario running** — `quorum_scenario_running`
 - **Annotations**: kill, partition, load bursts marked by the playground
 
 ### Row 5: Node table
@@ -142,11 +142,11 @@ histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_se
 | Column | Query |
 |---|---|
 | Node | label `node` |
-| Role | `raftdb_state` |
-| Term | `raftdb_term` |
-| Commit | `raftdb_commit_index` |
-| Lag | `raftdb_replication_lag` |
-| Up | `up{job="ryanDB"}` |
+| Role | `quorum_state` |
+| Term | `quorum_term` |
+| Commit | `quorum_commit_index` |
+| Lag | `quorum_replication_lag` |
+| Up | `up{job="quorum"}` |
 
 ---
 
@@ -154,10 +154,10 @@ histogram_quantile(0.99, sum by (le, op) (rate(raftdb_client_request_duration_se
 
 | Alert | Expression | Duration | Meaning |
 |---|---|---|---|
-| NoSingleLeader | `raftdb_leader_count != 1` | 10s | Split brain or election in progress |
-| HighReplicationLag | `max(raftdb_replication_lag) > 5` | 30s | Follower stuck behind leader |
-| NodeDown | `up{job="ryanDB"} == 0` | 15s | Node process killed or unreachable |
-| ElectionStorm | `sum(rate(raftdb_elections_total[5m])) > 0.5` | 2m | Unstable cluster |
+| NoSingleLeader | `quorum_leader_count != 1` | 10s | Split brain or election in progress |
+| HighReplicationLag | `max(quorum_replication_lag) > 5` | 30s | Follower stuck behind leader |
+| NodeDown | `up{job="quorum"} == 0` | 15s | Node process killed or unreachable |
+| ElectionStorm | `sum(rate(quorum_elections_total[5m])) > 0.5` | 2m | Unstable cluster |
 
 ---
 
@@ -187,4 +187,4 @@ Live metrics API: `GET /api/metrics/live` (write/read throughput, p99 latency, r
 - Demo UI: http://localhost:8080
 - Prometheus (proxied): http://localhost:8080/prometheus/
 
-Disable per-node metrics when running ryanDB manually: `--metrics=false`.
+Disable per-node metrics when running quorum manually: `--metrics=false`.

@@ -1,7 +1,7 @@
-// Command benchmarks runs a load-test suite against a live RaftDB cluster and
+// Command benchmarks runs a load-test suite against a live Quorum cluster and
 // emits CSV/JSON results that the accompanying plot.py script turns into graphs.
 //
-// It is intentionally self-contained: it builds the ryanDB binary, launches a
+// It is intentionally self-contained: it builds the quorum binary, launches a
 // real multi-node cluster over HTTP/gRPC (the same way the integration tests
 // do), drives it with closed-loop client workers, and records latency samples
 // per request so percentiles are computed from raw data (not pre-averaged).
@@ -32,7 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ryansenn/ryanDB/internal/harness"
+	"github.com/ryansenn/quorum/internal/harness"
 )
 
 // ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ func main() {
 	concStr := flag.String("concurrency", "1,4,8,16,32,64", "comma-separated concurrency levels")
 	preloadN := flag.Int("preload", 2000, "number of keys to preload for read tests")
 	outDir := flag.String("out", "", "output directory (default benchmarks/results)")
-	noEvents := flag.Bool("no-events", false, "pass --no-events to ryanDB nodes")
+	noEvents := flag.Bool("no-events", false, "pass --no-events to quorum nodes")
 	flag.Parse()
 
 	dur := *durFlag
@@ -449,7 +449,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("locate repo root: %v", err)
 	}
-	binary := filepath.Join(repoRoot, "ryanDB")
+	binary := filepath.Join(repoRoot, "quorum")
 	resultsDir := *outDir
 	if resultsDir == "" {
 		resultsDir = filepath.Join(repoRoot, "benchmarks", "results")
@@ -458,7 +458,7 @@ func main() {
 	mustMkdir(resultsDir)
 	mustMkdir(logDir)
 
-	log.Printf("building ryanDB binary...")
+	log.Printf("building quorum binary...")
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
