@@ -8,21 +8,32 @@ export function leaderSlotPosition(bounds = { width: 1000, height: 420 }) {
   };
 }
 
-export function computeLayout(nodes, bounds = { width: 1000, height: 420 }) {
+// Approximate on-screen footprint of a node card at scale 1 (see .node-card CSS).
+const CARD = 172;
+const MARGIN_X = 24;
+const MARGIN_Y = 22;
+const GAP_X = 22;
+const GAP_Y = 16;
+const MAX_COLS = 3;
+const MIN_SCALE = 0.42;
+
+export function computeLayout(nodes, bounds = { width: 1000, height: 420 }, clusterStarted = true) {
   const pos = {};
   const w = bounds.width;
   const h = bounds.height;
   const cy = h * 0.5;
 
-  const running = nodes.filter((n) => n.running !== false);
-  const n = running.length;
-  const scale = Math.max(0.68, Math.min(1.0, 4.8 / Math.max(n, 1)));
+  // A node is "down" (shown in the offline row) only once the cluster has been
+  // started; before that every node is idle and belongs in the topology. The
+  // status API may omit `running` for a crashed node, so treat anything that
+  // isn't explicitly running as down.
+  const isDown = (node) => clusterStarted && node.running !== true;
+  const running = nodes.filter((n) => !isDown(n));
 
   const clientX = Math.max(56, w * 0.06);
   pos.client = { x: clientX, y: cy, role: "client", scale: 0.9 };
 
   const slot = leaderSlotPosition(bounds);
-  pos._leaderSlot = { ...slot, scale: scale * 1.02 };
 
   const leaderNode = running.find(
     (node) => node.state === 2 || node.stateName === "leader"
@@ -31,40 +42,87 @@ export function computeLayout(nodes, bounds = { width: 1000, height: 420 }) {
     .filter((node) => node !== leaderNode)
     .sort((a, b) => a.id.localeCompare(b.id));
 
-  const clusterCx = w * 0.64;
-  const radius = Math.min(w * 0.26, h * 0.4, 56 + Math.max(followers.length, 1) * 36);
-  const start = -Math.PI * 0.42;
-  const end = Math.PI * 0.42;
+  const offline = nodes.filter(isDown);
 
+  // Vertical region available for followers. Reserve a band at the bottom for
+  // crashed nodes so the arc never collides with the offline row.
+  const reserveBottom = offline.length ? 130 : 0;
+  const regionTop = MARGIN_Y;
+  const regionBottom = h - MARGIN_Y - reserveBottom;
+  const regionH = Math.max(140, regionBottom - regionTop);
+  const cyF = (regionTop + regionBottom) / 2;
+
+  // Horizontal region: everything to the right of the leader slot.
+  const leaderHalf = (CARD * 1.02) / 2;
+  const regionLeft = slot.x + leaderHalf * 0.6 + 40;
+  const regionRight = w - MARGIN_X;
+  const availW = Math.max(CARD, regionRight - regionLeft);
+
+  const fc = Math.max(followers.length, 1);
+
+  // Pick the column count (1..MAX_COLS) that lets the cards be as large as
+  // possible without overlapping, using both width and height of the canvas.
+  let cols = 1;
+  let scale = 0;
+  const maxCols = Math.min(MAX_COLS, fc);
+  for (let c = 1; c <= maxCols; c++) {
+    const rows = Math.ceil(fc / c);
+    const sV = (regionH - (rows - 1) * GAP_Y) / (rows * CARD);
+    const sH = (availW - (c - 1) * GAP_X) / (c * CARD);
+    const s = Math.min(1.0, sV, sH);
+    if (s > scale + 1e-3) {
+      scale = s;
+      cols = c;
+    }
+  }
+  scale = Math.max(MIN_SCALE, scale);
+
+  const rows = Math.ceil(fc / cols);
+  const cardW = CARD * scale;
+  const cardH = CARD * scale;
+  const stepX = cardW + GAP_X;
+  const stepY = cardH + GAP_Y;
+
+  const blockW = cols * cardW + (cols - 1) * GAP_X;
+  let blockLeft = (regionLeft + regionRight) / 2 - blockW / 2;
+  blockLeft = Math.max(regionLeft, Math.min(blockLeft, regionRight - blockW));
+
+  // Column-major fill so columns stay balanced and adjacent rows never overlap.
   followers.forEach((node, i) => {
-    const count = followers.length;
-    const angle = count === 1 ? 0 : start + (i / (count - 1)) * (end - start);
+    const col = Math.floor(i / rows);
+    const row = i % rows;
+    const countInCol = Math.min(rows, fc - col * rows);
+    const colH = (countInCol - 1) * stepY;
+    const colTop = cyF - colH / 2;
     pos[node.id] = {
-      x: clusterCx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
+      x: blockLeft + cardW / 2 + col * stepX,
+      y: countInCol <= 1 ? cyF : colTop + row * stepY,
       role: "follower",
       scale,
       slotIndex: i,
     };
   });
 
+  const leaderScale = scale * 1.02;
+  pos._leaderSlot = { ...slot, scale: leaderScale };
+
   if (leaderNode) {
     pos[leaderNode.id] = {
       ...slot,
       role: "leader",
-      scale: scale * 1.02,
+      scale: leaderScale,
     };
   }
 
-  const offline = nodes.filter((node) => node.running === false);
   offline.forEach((node, i) => {
-    const gap = 130 * scale;
+    const ow = CARD * scale * 0.9;
+    const gap = ow + 28;
     const totalW = Math.max(0, offline.length - 1) * gap;
     pos[node.id] = {
-      x: w * 0.58 - totalW / 2 + i * gap,
-      y: h - 52,
+      x: (regionLeft + regionRight) / 2 - totalW / 2 + i * gap,
+      y: h - MARGIN_Y - ow / 2,
       role: "offline",
-      scale: scale * 0.88,
+      scale: scale * 0.9,
     };
   });
 

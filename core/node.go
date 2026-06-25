@@ -340,8 +340,12 @@ func (n *Node) ForwardToLeader(command *Command) string {
 }
 
 func (n *Node) StartElectionTimer() {
+	// Election timeout is kept several times larger than the heartbeat interval
+	// and the AppendEntries deadline (see leader.go) so a follower rides out a few
+	// slow or dropped heartbeats under load instead of triggering an election. The
+	// wide random range spreads out candidates to avoid split votes.
 	randTimeout := func() time.Duration {
-		return time.Duration(rand.Intn(151)+300) * time.Millisecond
+		return time.Duration(rand.Intn(400)+600) * time.Millisecond
 	}
 	timer := time.NewTimer(randTimeout())
 
@@ -375,54 +379,63 @@ func (n *Node) StartElection() {
 		Term:   n.Term.Load(),
 		Detail: "candidate",
 	})
-	yesVote := 1
+	var yesVote int64 = 1
 
 	log.Printf("%s started election for term %d", n.Id, n.Term.Load())
 
-	for id, client := range n.Clients {
-		if id != n.Id {
-			LogSize := int64(n.GetLogSize())
-			prevIndex := int64(LogSize - 1)
-			prevTerm := int64(0)
-
-			if prevIndex >= 0 && prevIndex < LogSize {
-				prevTerm = n.GetLogTerm(int(prevIndex))
-			}
-
-			voteReq := pb.VoteRequest{
-				Term:         n.Term.Load(),
-				CandidateId:  n.Id,
-				LastLogIndex: prevIndex,
-				LastLogTerm:  prevTerm,
-			}
-
-			n.recordEvent(Event{
-				Type: "request_vote",
-				From: n.Id,
-				To:   id,
-				Term: n.Term.Load(),
-			})
-
-			if err := n.checkPeerBlocked(id); err != nil {
-				continue
-			}
-
-			ctx, cancel := contextWithRPCTimeout()
-			voteResp, err := client.RequestVote(ctx, &voteReq)
-			cancel()
-
-			if err != nil {
-				log.Print(err)
-				continue
-			}
-
-			if voteResp.VoteGranted {
-				yesVote += 1
-			}
-		}
+	LogSize := int64(n.GetLogSize())
+	prevIndex := LogSize - 1
+	prevTerm := int64(0)
+	if prevIndex >= 0 && prevIndex < LogSize {
+		prevTerm = n.GetLogTerm(int(prevIndex))
 	}
 
-	if yesVote > len(n.Peers)/2 {
+	voteReq := pb.VoteRequest{
+		Term:         n.Term.Load(),
+		CandidateId:  n.Id,
+		LastLogIndex: prevIndex,
+		LastLogTerm:  prevTerm,
+	}
+
+	// Request votes in parallel. Collecting them sequentially means a single slow
+	// or dead peer (such as the leader we are replacing) blocks the whole election
+	// for a full RPC timeout per peer, which keeps the cluster leaderless long
+	// enough to trigger yet another election.
+	var wg sync.WaitGroup
+	for id, client := range n.Clients {
+		if id == n.Id {
+			continue
+		}
+
+		n.recordEvent(Event{
+			Type: "request_vote",
+			From: n.Id,
+			To:   id,
+			Term: n.Term.Load(),
+		})
+
+		if err := n.checkPeerBlocked(id); err != nil {
+			continue
+		}
+
+		wg.Add(1)
+		go func(id string, client pb.NodeClient) {
+			defer wg.Done()
+			ctx, cancel := contextWithRPCTimeout()
+			defer cancel()
+			voteResp, err := client.RequestVote(ctx, &voteReq)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+			if voteResp.VoteGranted {
+				atomic.AddInt64(&yesVote, 1)
+			}
+		}(id, client)
+	}
+	wg.Wait()
+
+	if int(yesVote) > len(n.Peers)/2 {
 		n.State = Leader
 		n.recordEvent(Event{
 			Type:   "state_change",

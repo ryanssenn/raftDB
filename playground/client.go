@@ -13,7 +13,7 @@ var playgroundHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
 type NodeStatus struct {
 	ID           string           `json:"id"`
-	Running      bool             `json:"running,omitempty"`
+	Running      bool             `json:"running"`
 	Reachable    bool             `json:"reachable,omitempty"`
 	State        int              `json:"state,omitempty"`
 	StateName    string           `json:"stateName,omitempty"`

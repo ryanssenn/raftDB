@@ -101,7 +101,7 @@ function stressPhaseLabel(cluster, scenario) {
     const leader = (cluster?.nodes || []).find(
       (n) => n.running && (n.state === 2 || n.stateName === "leader")
     );
-    return leader ? "Cluster ready — warming up…" : "Waiting for leader election…";
+    return leader ? "Cluster ready - warming up…" : "Waiting for leader election…";
   }
   if (stressPhase === "warming") {
     const pct = Math.round(visualIntensity * 100);
@@ -431,7 +431,7 @@ function updateStatus(data, scenario) {
   lastLayoutSig = combined;
 
   renderer.clusterStarted = Boolean(data.clusterStarted);
-  const pos = computeLayout(nodes, topologyBounds);
+  const pos = computeLayout(nodes, topologyBounds, Boolean(data.clusterStarted));
   renderer.syncNodes(nodes, pos, data.partitionNodes || [], topologyBounds);
   updateFxRoute(pos, renderer.leaderId);
 }
@@ -449,7 +449,7 @@ function updateScenario(sc) {
     return;
   }
   if (sc.running && sc.name === "Continuous stress") {
-    stepEl.textContent = "Running continuous load — click Stop stress test to end";
+    stepEl.textContent = "Running continuous load - click Stop stress test to end";
     progress.style.width = "100%";
     document.getElementById("btn-pause").disabled = true;
     const log = document.getElementById("event-log");
@@ -715,7 +715,7 @@ document.getElementById("btn-quit").addEventListener("click", async () => {
   } catch (_) { /* server may exit before response completes */ }
   document.body.innerHTML = `
     <div class="quit-screen">
-      <p>Playground stopped. Port freed — you can close this tab.</p>
+      <p>Playground stopped. Port freed - you can close this tab.</p>
     </div>
   `;
 });

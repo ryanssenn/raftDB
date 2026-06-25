@@ -136,7 +136,7 @@ func portAvailable(port int) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf(
-			"port %d already in use — another playground may still be running (Ctrl+C in its terminal, or: lsof -ti :%d | xargs kill)",
+			"port %d already in use - another playground may still be running (Ctrl+C in its terminal, or: lsof -ti :%d | xargs kill)",
 			port, port,
 		)
 	}

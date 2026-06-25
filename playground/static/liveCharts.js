@@ -13,7 +13,7 @@ function formatOps(v) {
 }
 
 function formatMs(v) {
-  if (v == null || Number.isNaN(v) || v <= 0) return "—";
+  if (v == null || Number.isNaN(v) || v <= 0) return "-";
   return `${v.toFixed(1)} ms`;
 }
 
@@ -31,7 +31,7 @@ export class LiveCharts {
       el.innerHTML = `
         <header class="live-chart-head">
           <span class="live-chart-label">${def.label}</span>
-          <strong class="live-chart-value">—</strong>
+          <strong class="live-chart-value">-</strong>
         </header>
         <canvas class="live-chart-canvas"></canvas>
       `;

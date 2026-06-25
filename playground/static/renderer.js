@@ -177,10 +177,10 @@ export class Renderer {
         const commit = node.commitIndex ?? -1;
         const idleNow = !node.running && !this.clusterStarted;
         card.querySelector(".node-term").textContent = node.running
-          ? `term ${node.term ?? "—"}`
+          ? `term ${node.term ?? "-"}`
           : idleNow ? "not started" : "crashed";
         card.querySelector(".node-commit").textContent = node.running
-          ? `commit ${node.commitIndex ?? "—"}`
+          ? `commit ${node.commitIndex ?? "-"}`
           : idleNow ? "" : "Start to recover";
         if (node.running && commit > prevCommit && prevCommit >= 0) {
           card.classList.add("commit-flash");
@@ -306,8 +306,8 @@ export class Renderer {
           <span class="node-id">${id}</span>
         </div>
         <div class="node-meta">
-          <span class="node-term">term —</span>
-          <span class="node-commit">commit —</span>
+          <span class="node-term">term -</span>
+          <span class="node-commit">commit -</span>
         </div>
         <div class="node-writes-wrap">
           <div class="node-writes-head">
@@ -344,7 +344,7 @@ export class Renderer {
       if (!listEl) continue;
 
       if (!info || (!info.running && (!card._writes || card._writes.length === 0))) {
-        listEl.innerHTML = `<li class="node-write empty">—</li>`;
+        listEl.innerHTML = `<li class="node-write empty">-</li>`;
         card._writes = card._writes || [];
         if (badge) badge.textContent = "";
         continue;

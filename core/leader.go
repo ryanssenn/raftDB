@@ -15,6 +15,17 @@ import (
 // bounded batches lets a recovering follower make steady forward progress.
 const maxEntriesPerAppend = 256
 
+// heartbeatInterval is how often the leader pings each follower when there are no
+// new entries. It must stay well below the election timeout (see node.go) so a
+// follower receives several heartbeats per election window and tolerates losing a
+// few to transient load without starting a needless election.
+const heartbeatInterval = 50 * time.Millisecond
+
+// appendTimeout bounds a single AppendEntries RPC. It is larger than a healthy
+// round trip but comfortably smaller than the minimum election timeout, so a slow
+// call fails fast enough to retry before the follower gives up on the leader.
+const appendTimeout = 300 * time.Millisecond
+
 func (n *Node) notifyReplicators() {
 	select {
 	case n.ReplicateNotify <- struct{}{}:
@@ -146,13 +157,13 @@ func (n *Node) ReplicateToFollower(id string) {
 			if len(entries) == 0 {
 				select {
 				case <-n.ReplicateNotify:
-				case <-time.After(10 * time.Millisecond):
+				case <-time.After(heartbeatInterval):
 				}
 			}
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), appendTimeout)
 		resp, err := n.Clients[id].AppendEntries(ctx, &req)
 		cancel()
 
@@ -194,7 +205,7 @@ func (n *Node) ReplicateToFollower(id string) {
 		if len(entries) == 0 {
 			select {
 			case <-n.ReplicateNotify:
-			case <-time.After(10 * time.Millisecond):
+			case <-time.After(heartbeatInterval):
 			}
 		}
 	}

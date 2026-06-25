@@ -99,7 +99,7 @@ rate(quorum_requestvote_total{result="granted"}[1m])
 | `quorum_client_requests_total` | Counter | `op`, `result`, `node` | HTTP put/get volume | Rate by op and result |
 | `quorum_client_request_duration_seconds` | Histogram | `op`, `node` | Request latency | Heatmap or p50/p99 |
 | `quorum_scenario_step` | Gauge | `scenario` | Current step index | Stat panel |
-| `quorum_scenario_running` | Gauge | — | 1 if scenario active | Stat panel |
+| `quorum_scenario_running` | Gauge | - | 1 if scenario active | Stat panel |
 
 **Useful PromQL**
 
@@ -114,27 +114,27 @@ histogram_quantile(0.99, sum by (le, op) (rate(quorum_client_request_duration_se
 
 ### Row 1: Cluster health
 
-- **Leader count** — `quorum_leader_count` (threshold: green=1, red otherwise)
-- **Current term** — `max(quorum_term)`
-- **Nodes running** — `quorum_nodes_running / quorum_cluster_nodes`
-- **Commit spread** — `max(quorum_commit_index) - min(quorum_commit_index)`
+- **Leader count** - `quorum_leader_count` (threshold: green=1, red otherwise)
+- **Current term** - `max(quorum_term)`
+- **Nodes running** - `quorum_nodes_running / quorum_cluster_nodes`
+- **Commit spread** - `max(quorum_commit_index) - min(quorum_commit_index)`
 
 ### Row 2: Consensus and replication
 
-- **Commit index by node** — `quorum_commit_index`
-- **Replication lag by node** — `quorum_replication_lag`
-- **Apply lag by node** — `quorum_apply_lag`
+- **Commit index by node** - `quorum_commit_index`
+- **Replication lag by node** - `quorum_replication_lag`
+- **Apply lag by node** - `quorum_apply_lag`
 
 ### Row 3: Activity and stability
 
-- **Election rate** — `rate(quorum_elections_total[1m])`
-- **Commit rate** — `rate(quorum_commits_total[1m])`
-- **AppendEntries success vs failure** — rates by `result`
+- **Election rate** - `rate(quorum_elections_total[1m])`
+- **Commit rate** - `rate(quorum_commits_total[1m])`
+- **AppendEntries success vs failure** - rates by `result`
 
 ### Row 4: Scenario context
 
-- **Scenario step** — `quorum_scenario_step`
-- **Scenario running** — `quorum_scenario_running`
+- **Scenario step** - `quorum_scenario_step`
+- **Scenario running** - `quorum_scenario_running`
 - **Annotations**: kill, partition, load bursts marked by the playground
 
 ### Row 5: Node table

@@ -30,8 +30,8 @@ docker compose -f monitoring/docker-compose.yml up
 
 ## Dashboards
 
-- `playground-live` — four timeseries panels embedded in the playground UI
-- `quorum-playground` — full cluster dashboard (leader, commits, elections, lag)
+- `playground-live` - four timeseries panels embedded in the playground UI
+- `quorum-playground` - full cluster dashboard (leader, commits, elections, lag)
 
 ## Dynamic scrape targets
 

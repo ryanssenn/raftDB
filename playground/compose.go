@@ -17,7 +17,7 @@ func checkDocker() error {
 	cmd := exec.CommandContext(ctx, "docker", "info")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Docker is not running — start Docker Desktop and retry\n%s", out)
+		return fmt.Errorf("Docker is not running - start Docker Desktop and retry\n%s", out)
 	}
 	return nil
 }

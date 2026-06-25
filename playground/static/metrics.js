@@ -1,5 +1,5 @@
 function formatOps(v) {
-  if (v == null || Number.isNaN(v)) return "—";
+  if (v == null || Number.isNaN(v)) return "-";
   if (v >= 1000) return `${(v / 1000).toFixed(1)}k/s`;
   if (v >= 10) return `${v.toFixed(0)}/s`;
   if (v >= 1) return `${v.toFixed(1)}/s`;
@@ -7,12 +7,12 @@ function formatOps(v) {
 }
 
 function formatMs(v) {
-  if (v == null || Number.isNaN(v) || v <= 0) return "—";
+  if (v == null || Number.isNaN(v) || v <= 0) return "-";
   return `${v.toFixed(1)} ms`;
 }
 
 function formatLag(v) {
-  if (v == null || Number.isNaN(v)) return "—";
+  if (v == null || Number.isNaN(v)) return "-";
   return `${Math.round(v)} entries`;
 }
 
@@ -23,7 +23,7 @@ export function updateMetricsStats(data) {
   document.getElementById("stat-read-p99").textContent = formatMs(data.readP99Ms);
   document.getElementById("stat-lag").textContent = formatLag(data.maxReplicationLag);
   document.getElementById("stat-failover").textContent =
-    data.failoverMs != null ? `${Math.round(data.failoverMs)} ms` : "—";
+    data.failoverMs != null ? `${Math.round(data.failoverMs)} ms` : "-";
 }
 
 function setText(id, text) {
@@ -37,7 +37,7 @@ export function updateSidebarMetrics(data) {
   setText("sm-write-p99", formatMs(data.writeP99Ms));
   setText("sm-read-p99", formatMs(data.readP99Ms));
   setText("sm-lag", formatLag(data.maxReplicationLag));
-  setText("sm-failover", data.failoverMs != null ? `${Math.round(data.failoverMs)} ms` : "—");
+  setText("sm-failover", data.failoverMs != null ? `${Math.round(data.failoverMs)} ms` : "-");
   drawSidebarSpark(data.history?.writeOpsSec || []);
 }
 
