@@ -2,7 +2,7 @@
 
 A Go implementation of the Raft consensus algorithm with built-in observability. Start a real cluster, run a predefined workload, and inspect consensus and performance metrics through Prometheus.
 
-<img width="720" height="412" alt="quorum_demo" src="https://github.com/user-attachments/assets/93bda947-b41e-48e1-89c5-394a95fcd6f0" />
+<img width="720" height="413" alt="quorum_demo" src="https://github.com/user-attachments/assets/0f12b69c-7a4c-433a-8a68-409c241e1ffc" />
 
 ## Try it
 
