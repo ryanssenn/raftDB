@@ -14,7 +14,7 @@ This command:
 
 1. Starts Prometheus in Docker.
 2. Opens [http://localhost:8080](http://localhost:8080).
-3. Lets you start a 5-node cluster and run a 45-second workload.
+3. Lets you start a 5-node cluster and run a ~55-second workload (load bursts through a follower failure, a leader failover, and recovery).
 
 Metrics are documented in [docs/observability.md](docs/observability.md).
 

@@ -208,7 +208,11 @@ Write latency at concurrency 1 dropped from ~11 ms (fsync-dominated floor) to ~2
 | In-memory log tail | 40,000 entries | **~1,317 entries** |
 | Restart recovery time | 201 ms | **101 ms** |
 
-**Verdict:** Throughput on a fresh cluster is unaffected (compaction runs in the background), but the on-disk log shrinks ~30× and restart recovery is ~2× faster — and both stay *bounded* as the cluster runs, instead of growing with every write. The gap widens with log size and downtime. Correctness is covered by a unit test (`TestSnapshotCompaction`) and an integration test (`TestSnapshotCatchUp`, which forces the leader to compact past a stopped follower and verifies it recovers via `InstallSnapshot`). Kept.
+**Verdict:** Kept. The on-disk log shrinks ~30×, restart recovery is ~2× faster, and both stay *bounded* as the cluster runs instead of growing with every write; the gap widens with log size and downtime.
+
+Compaction is not free: the snapshot write and log rewrite `fsync` while holding the apply/log locks, so under *sustained* writes at an aggressive threshold (2,000) it costs throughput and inflates tail latency — measured at 64 clients, ~27.4k → ~17.7k ops/s and p99 ~5 ms → ~46 ms. That cost is a tunable, orthogonal maintenance concern (a realistic threshold is far higher, and the pause could be removed by writing the snapshot off the lock), so the throughput benchmarks isolate the consensus write path by disabling compaction (`go run ./benchmarks` passes a high `--snapshot-threshold`); the compaction behavior is measured directly by the table above and `TestSnapshotRecoveryBench`.
+
+Correctness is covered by a unit test (`TestSnapshotCompaction`) and an integration test (`TestSnapshotCatchUp`, which forces the leader to compact past a stopped follower and verifies it recovers via `InstallSnapshot`). Kept.
 
 Reproduce the table with:
 

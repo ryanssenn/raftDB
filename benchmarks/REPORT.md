@@ -25,7 +25,7 @@ For a Raft-backed store, throughput and latency percentiles are the primary capa
 
 **Load generation.** The harness uses closed-loop load: each of *N* worker goroutines sends one request, waits for the response, and repeats for a fixed duration. Throughput is completed operations divided by wall time; latency is the round-trip time per request. Closed-loop load tends to under-report tail latency compared with open-loop generators when the server slows down (see [Limitations](#6-limitations)).
 
-**Other settings.** Each data point uses a 5 s measurement window after cluster warmup. Read benchmarks preload 2,000 keys. HTTP keep-alive and a large connection pool are enabled so results reflect store behavior rather than connection setup.
+**Other settings.** Each data point uses a 5 s measurement window after cluster warmup. Read benchmarks preload 2,000 keys. HTTP keep-alive and a large connection pool are enabled so results reflect store behavior rather than connection setup. Log compaction is disabled during these runs (the harness passes a high `--snapshot-threshold`) so the numbers isolate the consensus write path; the cost and benefit of compaction are measured separately by `TestSnapshotRecoveryBench` (see [OPTIMIZATIONS.md](../OPTIMIZATIONS.md)).
 
 **Environment.** Single host (Cursor Cloud VM, 4 vCPUs, 16 GB RAM), all nodes as local processes, Go 1.24.0. Absolute numbers depend on the host; relative comparisons and order-of-magnitude gaps are the main portable results.
 
