@@ -23,11 +23,11 @@ Results from a 3-node cluster on a single host ([full report](benchmarks/REPORT.
 
 | Metric                          | Result          |
 | ------------------------------- | --------------- |
-| Peak read throughput            | 72,356 ops/s    |
-| Write throughput (64 clients)   | 19,463 ops/s    |
-| Read latency, p99 (16 clients)  | 1.33 ms         |
-| Write latency, p99 (16 clients) | 4.0 ms          |
-| Leader failover recovery        | 327 ms          |
+| Peak read throughput            | 94,501 ops/s    |
+| Write throughput (64 clients)   | 28,096 ops/s    |
+| Read latency, p99 (16 clients)  | 1.04 ms         |
+| Write latency, p99 (16 clients) | 2.8 ms          |
+| Leader failover recovery        | ~1.4 s          |
 
 These numbers measure implementation overhead on a single machine rather than network performance across multiple hosts.
 

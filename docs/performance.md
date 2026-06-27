@@ -19,11 +19,11 @@ On a single host with a 3-node cluster (see the benchmark report for full number
 
 | Path | Throughput (approx.) | Dominant cost |
 |---|---|---|
-| Writes | ~2.4k ops/sec at 64 clients | Consensus, replication, disk sync |
-| Reads (leader) | ~70k ops/sec | HTTP + in-memory map lookup |
-| Failover | ~357 ms | Election timeout (300–450 ms) |
+| Writes | ~28k ops/sec at 64 clients | Consensus, replication, disk sync |
+| Reads (leader) | ~94k ops/sec | HTTP + in-memory map lookup |
+| Failover | ~1.4 s | Election timeout (600–1000 ms) |
 
-Writes are roughly 30–170× slower than reads. That gap is expected: every write goes through Raft and is persisted to disk before the client receives success. Reads on the leader skip consensus and disk.
+Writes are roughly 3–12× slower than reads, depending on concurrency. That gap is expected: every write goes through Raft and is persisted to disk before the client receives success. Reads on the leader skip consensus and disk. (Before the write-path optimization campaign, writes were far slower — ~2.4k ops/sec at 64 clients; see [OPTIMIZATIONS.md](../OPTIMIZATIONS.md).)
 
 The sections below follow the write path first, since that is where most gain is available.
 
@@ -33,7 +33,7 @@ The sections below follow the write path first, since that is where most gain is
 
 ### What the code does today
 
-Each log append in [`core/log.go`](../core/log.go) calls `logFile.Sync()` after writing an entry. That forces the operating system to flush data to stable storage on every write. The benchmark report shows an ~11 ms floor at concurrency 1, which is consistent with per-entry fsync on typical hardware.
+Log appends in [`core/log.go`](../core/log.go) are persisted with `fsync` before an entry is acknowledged. The original implementation called `logFile.Sync()` on every single append, which forced the operating system to flush to stable storage on every write — an ~11 ms latency floor at concurrency 1 on the original benchmark host, consistent with per-entry fsync. Group commit (now implemented — **[done]**, below) batches that into one `Sync()` per replication round, which is what the code does today.
 
 ### Possible improvements
 
@@ -98,7 +98,7 @@ Each entry caches its serialized command (`LogEntry.Serialized`) so it is JSON-m
 
 Reads on the leader wait until `LastApplied` catches up to `CommitIndex`, then read from an in-memory map ([`core/node.go`](../core/node.go)). Followers forward reads to the leader over gRPC. There is no read index, lease, or follower-local read optimization.
 
-Benchmarks already show reads near 70k ops/sec on one machine. Further gains are possible but secondary to write improvements.
+Benchmarks already show reads near 94k ops/sec on one machine. Further gains are possible but secondary to write improvements.
 
 ### Possible improvements
 

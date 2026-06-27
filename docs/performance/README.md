@@ -6,11 +6,11 @@ Quorum includes a benchmark harness and a documented optimization campaign. Thes
 
 | Metric | Result |
 |---|---|
-| Read throughput (peak) | ~72,000 ops/sec |
-| Write throughput (64 clients) | ~19,500 ops/sec |
-| Read latency, p99 (16 clients) | ~1.3 ms |
-| Write latency, p99 (16 clients) | ~4 ms |
-| Failover recovery after leader crash | ~327 ms |
+| Read throughput (peak) | ~94,000 ops/sec |
+| Write throughput (64 clients) | ~28,000 ops/sec |
+| Read latency, p99 (16 clients) | ~1.0 ms |
+| Write latency, p99 (16 clients) | ~2.8 ms |
+| Failover recovery after leader crash | ~1.4 s |
 
 Full methodology, graphs, and limitations: [benchmarks/REPORT.md](../../benchmarks/REPORT.md)
 
