@@ -12,7 +12,7 @@ Docker Desktop must be running.
 go run ./playground
 ```
 
-The playground UI embeds Grafana panels (proxied at `/grafana/`). Stat numbers above the charts still come from `/api/metrics/live`.
+The playground UI renders its own live charts from `/api/metrics/live`. Grafana is optional: when Docker is running, the UI links out to the `playground-live` dashboard at `http://localhost:3000`.
 
 Manual stack:
 
@@ -30,7 +30,7 @@ docker compose -f monitoring/docker-compose.yml up
 
 ## Dashboards
 
-- `playground-live` - four timeseries panels embedded in the playground UI
+- `playground-live` - four timeseries panels (Grafana dashboard linked from the playground UI)
 - `quorum-playground` - full cluster dashboard (leader, commits, elections, lag)
 
 ## Dynamic scrape targets

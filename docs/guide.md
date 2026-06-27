@@ -116,7 +116,7 @@ Every follower runs an election timer (`StartElectionTimer` in `core/node.go`). 
 
 A follower grants a vote if the candidate’s log is at least as up-to-date as its own and it has not voted for someone else in this term. If the candidate receives votes from a **majority**, it becomes leader and starts replication workers.
 
-While a leader is healthy, it sends periodic `AppendEntries` heartbeats (often with zero new entries). Each heartbeat calls `ReceiveHeartbeat`, which resets the follower’s election timer. Timeouts are randomized between 300 ms and 450 ms so two followers rarely start elections at the same moment, a simple way to reduce split votes.
+While a leader is healthy, it sends periodic `AppendEntries` heartbeats (often with zero new entries). Each heartbeat calls `ReceiveHeartbeat`, which resets the follower’s election timer. Timeouts are randomized between 600 ms and 1000 ms so two followers rarely start elections at the same moment, a simple way to reduce split votes.
 
 If the leader stops, timers expire, a new leader is elected, and replication continues from the shared log. The `/status` endpoint exposes `state` (0=follower, 1=candidate, 2=leader), `term`, and `leaderId` for debugging.
 

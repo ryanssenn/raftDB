@@ -17,7 +17,7 @@ Full methodology, graphs, and limitations: [benchmarks/REPORT.md](../../benchmar
 ## Reproduce
 
 ```bash
-go run ./benchmarks --quick --duration 10s --nodes 3
+go run ./benchmarks --quick
 python3 benchmarks/plot.py
 ```
 

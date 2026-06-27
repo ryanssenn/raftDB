@@ -80,7 +80,7 @@ Each entry caches its serialized command (`LogEntry.Serialized`) so it is JSON-m
 
 **Parallel append to disk and network. [planned]** Persist locally and send to followers concurrently where safe, rather than fsyncing before each replication send.
 
-**Tune RPC timeouts.** AppendEntries uses a 200 ms timeout. On LAN this is fine; on WAN, adaptive timeouts reduce false retries. On loopback, shorter timeouts with faster retry may reduce tail latency.
+**Tune RPC timeouts.** AppendEntries uses a 300 ms timeout. On LAN this is fine; on WAN, adaptive timeouts reduce false retries. On loopback, shorter timeouts with faster retry may reduce tail latency.
 
 | Change | Expected impact | Complexity |
 |---|---|---|
