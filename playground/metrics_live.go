@@ -19,15 +19,19 @@ type metricsPoint struct {
 type metricsHistory struct {
 	WriteOpsSec       []metricsPoint `json:"writeOpsSec"`
 	ReadOpsSec        []metricsPoint `json:"readOpsSec"`
+	WriteP50Ms        []metricsPoint `json:"writeP50Ms"`
 	WriteP99Ms        []metricsPoint `json:"writeP99Ms"`
 	ReadP99Ms         []metricsPoint `json:"readP99Ms"`
 	CommitRate        []metricsPoint `json:"commitRate"`
 	MaxReplicationLag []metricsPoint `json:"maxReplicationLag"`
+	LeaderCount       []metricsPoint `json:"leaderCount"`
+	NodesUp           []metricsPoint `json:"nodesUp"`
 }
 
 type liveMetricsResponse struct {
 	WriteOpsSec       float64        `json:"writeOpsSec"`
 	ReadOpsSec        float64        `json:"readOpsSec"`
+	WriteP50Ms        float64        `json:"writeP50Ms"`
 	WriteP99Ms        float64        `json:"writeP99Ms"`
 	ReadP99Ms         float64        `json:"readP99Ms"`
 	CommitRate        float64        `json:"commitRate"`
@@ -36,6 +40,9 @@ type liveMetricsResponse struct {
 	FailoverMs        *float64       `json:"failoverMs"`
 	ClientSendRate    float64        `json:"clientSendRate"`
 	ClientSuccessRate float64        `json:"clientSuccessRate"`
+	LeaderCount       int            `json:"leaderCount"`
+	NodesUp           int            `json:"nodesUp"`
+	ClusterSize       int            `json:"clusterSize"`
 	History           metricsHistory `json:"history"`
 }
 
@@ -69,7 +76,7 @@ func (srv *Server) updateFailoverRecovery() {
 	srv.failoverStartedAt = nil
 }
 
-func (srv *Server) appendHistory(h *metricsHistory, ts int64, writeOps, readOps, writeP99, readP99, commitRate, maxLag float64) {
+func (srv *Server) appendHistory(h *metricsHistory, ts int64, writeOps, readOps, writeP50, writeP99, readP99, commitRate, maxLag, leaderCount, nodesUp float64) {
 	appendPoint := func(series *[]metricsPoint, val float64) {
 		*series = append(*series, metricsPoint{Ts: ts, Val: val})
 		if len(*series) > metricsHistoryLen {
@@ -78,10 +85,13 @@ func (srv *Server) appendHistory(h *metricsHistory, ts int64, writeOps, readOps,
 	}
 	appendPoint(&h.WriteOpsSec, writeOps)
 	appendPoint(&h.ReadOpsSec, readOps)
+	appendPoint(&h.WriteP50Ms, writeP50)
 	appendPoint(&h.WriteP99Ms, writeP99)
 	appendPoint(&h.ReadP99Ms, readP99)
 	appendPoint(&h.CommitRate, commitRate)
 	appendPoint(&h.MaxReplicationLag, maxLag)
+	appendPoint(&h.LeaderCount, leaderCount)
+	appendPoint(&h.NodesUp, nodesUp)
 }
 
 func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
@@ -93,12 +103,32 @@ func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
 	if srv.composeEnabled && prometheusReady() {
 		resp.WriteOpsSec = promQueryScalar(`sum(rate(quorum_client_requests_total{op="put",result="success"}[5s]))`)
 		resp.ReadOpsSec = promQueryScalar(`sum(rate(quorum_client_requests_total{op="get",result="success"}[5s]))`)
+		resp.WriteP50Ms = promQueryScalar(`histogram_quantile(0.50, sum(rate(quorum_client_request_duration_seconds_bucket{op="put"}[5s])) by (le)) * 1000`)
 		resp.WriteP99Ms = promQueryScalar(`histogram_quantile(0.99, sum(rate(quorum_client_request_duration_seconds_bucket{op="put"}[5s])) by (le)) * 1000`)
 		resp.ReadP99Ms = promQueryScalar(`histogram_quantile(0.99, sum(rate(quorum_client_request_duration_seconds_bucket{op="get"}[5s])) by (le)) * 1000`)
 		resp.CommitRate = promQueryScalar(`sum(rate(quorum_commits_total[5s]))`)
 		resp.MaxReplicationLag = promQueryScalar(`max(quorum_replication_lag)`)
 		resp.ElectionRate = promQueryScalar(`sum(rate(quorum_elections_total[5s]))`)
 	}
+
+	// Leadership and availability come straight from cluster status so the
+	// chart works even when Docker/Prometheus are disabled.
+	srv.mu.RLock()
+	statuses := srv.clusterStatusLocked()
+	clusterSize := len(srv.cluster.Nodes)
+	srv.mu.RUnlock()
+	leaders, nodesUp := 0, 0
+	for _, ns := range statuses {
+		if ns.Running && ns.Reachable {
+			nodesUp++
+			if ns.State == 2 || ns.StateName == "leader" {
+				leaders++
+			}
+		}
+	}
+	resp.LeaderCount = leaders
+	resp.NodesUp = nodesUp
+	resp.ClusterSize = clusterSize
 
 	srv.metricsMu.Lock()
 	if srv.lastFailoverMs != nil {
@@ -116,6 +146,9 @@ func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
 		if load.ReadSuccessRate > resp.ReadOpsSec {
 			resp.ReadOpsSec = load.ReadSuccessRate
 		}
+		if load.WriteP50Ms > 0 {
+			resp.WriteP50Ms = load.WriteP50Ms
+		}
 		if load.WriteP99Ms > 0 {
 			resp.WriteP99Ms = load.WriteP99Ms
 		}
@@ -125,8 +158,9 @@ func (srv *Server) handleMetricsLive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	srv.appendHistory(&srv.metricsHistory, now,
-		resp.WriteOpsSec, resp.ReadOpsSec, resp.WriteP99Ms, resp.ReadP99Ms,
-		resp.CommitRate, resp.MaxReplicationLag)
+		resp.WriteOpsSec, resp.ReadOpsSec, resp.WriteP50Ms, resp.WriteP99Ms, resp.ReadP99Ms,
+		resp.CommitRate, resp.MaxReplicationLag,
+		float64(resp.LeaderCount), float64(resp.NodesUp))
 
 	resp.History = srv.metricsHistory
 	srv.metricsMu.Unlock()

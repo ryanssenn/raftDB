@@ -248,9 +248,9 @@ export class Renderer {
     if (!beam) {
       beam = el("path", {
         fill: "none",
-        stroke: "#3b82f6",
+        stroke: "#5e8fb5",
         "stroke-width": "1",
-        "stroke-opacity": "0.25",
+        "stroke-opacity": "0.2",
         "stroke-dasharray": "4 6",
         class: "beam client-beam",
       }, this.layers.beams);
@@ -277,8 +277,8 @@ export class Renderer {
         if (!beam) {
           beam = el("path", {
             fill: "none",
-            stroke: "#52525b",
-            "stroke-width": "1.5",
+            stroke: "#3a3a40",
+            "stroke-width": "1",
             class: "beam repl-beam",
           }, this.layers.beams);
           this.beamEls[key] = beam;

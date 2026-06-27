@@ -1,11 +1,11 @@
 import { SVG_NS } from "./renderer.js";
 
 const FLOW_COLORS = {
-  put: "#60a5fa",
-  forward: "#2dd4bf",
-  append: "#c4b5fd",
-  commit: "#4ade80",
-  state_change: "#fbbf24",
+  put: "#5e8fb5",
+  forward: "#6f9fc0",
+  append: "#8089a0",
+  commit: "#5a9c6e",
+  state_change: "#bf9b54",
 };
 
 const FLOW_DURATIONS = {
@@ -52,14 +52,14 @@ export class AnimationEngine {
     );
     trail.setAttribute("fill", "none");
     trail.setAttribute("stroke", color);
-    trail.setAttribute("stroke-width", type === "append" ? "2" : "1.5");
-    trail.setAttribute("opacity", type === "append" ? "0.35" : "0.2");
+    trail.setAttribute("stroke-width", "1");
+    trail.setAttribute("opacity", "0.12");
     g.appendChild(trail);
 
     const dot = document.createElementNS(SVG_NS, "circle");
-    dot.setAttribute("r", opts.r ?? (type === "append" ? 3.5 : 4));
+    dot.setAttribute("r", opts.r ?? (type === "append" ? 2 : 2.5));
     dot.setAttribute("fill", color);
-    dot.setAttribute("opacity", "0.9");
+    dot.setAttribute("opacity", "0.7");
     g.appendChild(dot);
 
     this.layer.appendChild(g);
@@ -83,7 +83,7 @@ export class AnimationEngine {
     if (!leaderId || !pos[leaderId]) return;
     for (const fid of followerIds) {
       if (fid === leaderId || !pos[fid]) continue;
-      this.spawnFlow(leaderId, fid, pos, "append", { curve: 18 + Math.random() * 14 });
+      this.spawnFlow(leaderId, fid, pos, "append", { curve: 22 });
     }
   }
 
@@ -95,7 +95,7 @@ export class AnimationEngine {
       const y = u * u * f.fp.y + 2 * u * t * f.mid.y + t * t * f.tp.y;
       f.dot.setAttribute("cx", x);
       f.dot.setAttribute("cy", y);
-      f.dot.setAttribute("opacity", String(0.9 * (1 - t * 0.6)));
+      f.dot.setAttribute("opacity", String(0.7 * (1 - t * 0.5)));
       if (t >= 1) {
         f.g.remove();
         return false;

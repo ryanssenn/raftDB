@@ -36,6 +36,7 @@ type LoadStats struct {
 	SuccessRate     float64 `json:"successRate"`
 	ReadSendRate    float64 `json:"readSendRate"`
 	ReadSuccessRate float64 `json:"readSuccessRate"`
+	WriteP50Ms      float64 `json:"writeP50Ms"`
 	WriteP99Ms      float64 `json:"writeP99Ms"`
 	ReadP99Ms       float64 `json:"readP99Ms"`
 	Attempts        int64   `json:"attempts"`
@@ -73,7 +74,7 @@ func (l *latencySamples) record(d time.Duration) {
 	l.mu.Unlock()
 }
 
-func (l *latencySamples) p99() float64 {
+func (l *latencySamples) percentile(p float64) float64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.samples) == 0 {
@@ -81,7 +82,7 @@ func (l *latencySamples) p99() float64 {
 	}
 	sorted := append([]float64(nil), l.samples...)
 	sort.Float64s(sorted)
-	idx := int(math.Ceil(0.99*float64(len(sorted)))) - 1
+	idx := int(math.Ceil(p*float64(len(sorted)))) - 1
 	if idx < 0 {
 		idx = 0
 	}
@@ -90,6 +91,10 @@ func (l *latencySamples) p99() float64 {
 	}
 	return sorted[idx]
 }
+
+func (l *latencySamples) p50() float64 { return l.percentile(0.50) }
+
+func (l *latencySamples) p99() float64 { return l.percentile(0.99) }
 
 type loadTracker struct {
 	concurrency     int
@@ -126,6 +131,7 @@ func (t *loadTracker) snapshot() LoadStats {
 		SuccessRate:     math.Float64frombits(t.successRate.Load()),
 		ReadSendRate:    math.Float64frombits(t.readSendRate.Load()),
 		ReadSuccessRate: math.Float64frombits(t.readSuccessRate.Load()),
+		WriteP50Ms:      t.writeLatency.p50(),
 		WriteP99Ms:      t.writeLatency.p99(),
 		ReadP99Ms:       t.readLatency.p99(),
 		Attempts:        t.attempts.Load(),

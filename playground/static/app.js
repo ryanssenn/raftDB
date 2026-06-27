@@ -145,7 +145,7 @@ clientFx.onSpawn = () => {
   const followers = (lastClusterData?.nodes || [])
     .filter((n) => n.running && n.id !== leaderId)
     .map((n) => n.id);
-  if (followers.length > 0 && Math.random() < 0.65) {
+  if (followers.length > 0) {
     replFx.spawnReplication(leaderId, followers, pos);
   }
 };
@@ -181,8 +181,9 @@ function scenarioSignature(sc) {
 function metricsStatsSignature(m, scenario) {
   const load = scenario?.load;
   return [
-    m.writeOpsSec, m.readOpsSec, m.writeP99Ms, m.readP99Ms,
+    m.writeOpsSec, m.readOpsSec, m.writeP50Ms, m.writeP99Ms, m.readP99Ms,
     m.maxReplicationLag, m.failoverMs, m.clientSendRate,
+    m.leaderCount, m.nodesUp, m.clusterSize,
     load?.writeP99Ms, load?.readSuccessRate,
   ].join("|");
 }
@@ -548,12 +549,7 @@ function tickReplication(dt) {
     .map((n) => n.id);
   if (followers.length === 0) return;
 
-  const burst = 1 + Math.floor(visualIntensity * 2);
-  replFx.spawnReplication(
-    renderer.leaderId,
-    followers.slice(0, Math.min(followers.length, burst)),
-    pos
-  );
+  replFx.spawnReplication(renderer.leaderId, followers, pos);
 }
 
 function frameLoop(ts) {

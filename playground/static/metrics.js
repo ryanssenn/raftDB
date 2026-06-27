@@ -16,14 +16,18 @@ function formatLag(v) {
   return `${Math.round(v)} entries`;
 }
 
+function formatLeadership(data) {
+  if (data.clusterSize == null || data.clusterSize <= 0) return "-";
+  return `${data.leaderCount ?? 0} leader · ${data.nodesUp ?? 0}/${data.clusterSize} up`;
+}
+
 export function updateMetricsStats(data) {
-  document.getElementById("stat-write-ops").textContent = formatOps(data.writeOpsSec);
-  document.getElementById("stat-read-ops").textContent = formatOps(data.readOpsSec);
-  document.getElementById("stat-write-p99").textContent = formatMs(data.writeP99Ms);
-  document.getElementById("stat-read-p99").textContent = formatMs(data.readP99Ms);
-  document.getElementById("stat-lag").textContent = formatLag(data.maxReplicationLag);
-  document.getElementById("stat-failover").textContent =
-    data.failoverMs != null ? `${Math.round(data.failoverMs)} ms` : "-";
+  setText("stat-write-ops", formatOps(data.writeOpsSec));
+  setText("stat-read-ops", formatOps(data.readOpsSec));
+  setText("stat-write-p50", formatMs(data.writeP50Ms));
+  setText("stat-write-p99", formatMs(data.writeP99Ms));
+  setText("stat-leadership", formatLeadership(data));
+  setText("stat-failover", data.failoverMs != null ? `${Math.round(data.failoverMs)} ms` : "-");
 }
 
 function setText(id, text) {
@@ -76,8 +80,8 @@ function drawSidebarSpark(series) {
   const yAt = (v) => h - (v / max) * (h - 3) - 1;
 
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "#22d3ee55");
-  grad.addColorStop(1, "#22d3ee08");
+  grad.addColorStop(0, "#5e8fb533");
+  grad.addColorStop(1, "#5e8fb500");
   ctx.beginPath();
   ctx.moveTo(0, h);
   for (let i = 0; i < n; i++) ctx.lineTo(xAt(i), yAt(pts[i]));
@@ -89,7 +93,7 @@ function drawSidebarSpark(series) {
   ctx.beginPath();
   ctx.moveTo(0, yAt(pts[0]));
   for (let i = 1; i < n; i++) ctx.lineTo(xAt(i), yAt(pts[i]));
-  ctx.strokeStyle = "#22d3ee";
+  ctx.strokeStyle = "#5e8fb5";
   ctx.lineWidth = 1.5;
   ctx.lineJoin = "round";
   ctx.stroke();
@@ -97,8 +101,8 @@ function drawSidebarSpark(series) {
   const lx = xAt(n - 1);
   const ly = yAt(pts[n - 1]);
   ctx.beginPath();
-  ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = "#22d3ee";
+  ctx.arc(lx, ly, 2.25, 0, Math.PI * 2);
+  ctx.fillStyle = "#5e8fb5";
   ctx.fill();
 }
 
@@ -127,21 +131,26 @@ export function mergeDisplayMetrics(metrics, scenario) {
     history: {
       writeOpsSec: [...(metrics.history?.writeOpsSec || [])],
       readOpsSec: [...(metrics.history?.readOpsSec || [])],
+      writeP50Ms: [...(metrics.history?.writeP50Ms || [])],
       writeP99Ms: [...(metrics.history?.writeP99Ms || [])],
       readP99Ms: [...(metrics.history?.readP99Ms || [])],
       commitRate: [...(metrics.history?.commitRate || [])],
       maxReplicationLag: [...(metrics.history?.maxReplicationLag || [])],
+      leaderCount: [...(metrics.history?.leaderCount || [])],
+      nodesUp: [...(metrics.history?.nodesUp || [])],
     },
   };
 
   if (load?.active) {
     if (load.successRate > 0) m.writeOpsSec = load.successRate;
     if (load.readSuccessRate > 0) m.readOpsSec = load.readSuccessRate;
+    if (load.writeP50Ms > 0) m.writeP50Ms = load.writeP50Ms;
     if (load.writeP99Ms > 0) m.writeP99Ms = load.writeP99Ms;
     if (load.readP99Ms > 0) m.readP99Ms = load.readP99Ms;
 
     patchHistorySeries(m.history, "writeOpsSec", m.writeOpsSec);
     patchHistorySeries(m.history, "readOpsSec", m.readOpsSec);
+    patchHistorySeries(m.history, "writeP50Ms", m.writeP50Ms);
     patchHistorySeries(m.history, "writeP99Ms", m.writeP99Ms);
     patchHistorySeries(m.history, "readP99Ms", m.readP99Ms);
   }
