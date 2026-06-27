@@ -45,6 +45,8 @@ go run ./benchmarks --quick --concurrency=1,16,64
 
 <img width="800" height="404" alt="quorum_demo" src="https://github.com/user-attachments/assets/4eb1e2e3-e883-48a3-996a-cb1ad600c111" />
 
+The clip above is the playground: a single-command dashboard that boots a real multi-node Raft cluster and drives it with a stress-test workload (concurrent writers, node kills, and leader failover) while Prometheus scrapes every node. It renders live throughput, latency, and leadership/quorum charts next to an animated topology that shows client requests, log replication, and elections as they happen. It turns the consensus protocol into something you can watch react to load and failure in real time.
+
 Prerequisite: [Docker Desktop](https://www.docker.com/products/docker-desktop/) must be running (used to start Prometheus).
 
 ```bash
