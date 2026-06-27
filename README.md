@@ -1,36 +1,25 @@
 # Quorum
 
-A Go implementation of the Raft consensus algorithm with built-in observability. Start a real cluster, run a predefined workload, and inspect consensus and performance metrics through Prometheus.
+A Go implementation of the [Raft consensus algorithm](https://raft.github.io/raft.pdf) with built-in observability. Quorum implements the core Raft protocol with a replicated in-memory key-value store, allowing you to start a real cluster, run a predefined workload, and inspect consensus and performance metrics through Prometheus.
 
-<img width="720" height="413" alt="quorum_demo" src="https://github.com/user-attachments/assets/0f12b69c-7a4c-433a-8a68-409c241e1ffc" />
 
-## Try it
+## Raft implementation
 
-Prerequisite: [Docker Desktop](https://www.docker.com/products/docker-desktop/) must be running (used to start Prometheus).
+Implements the core Raft protocol from the original paper, including:
 
-```bash
-go run ./playground
-```
+- Leader election
+- Log replication
+- Persistent state
+- Log compaction through state-machine snapshots
+- `InstallSnapshot` RPC for catching up far-behind followers
 
-Metrics are documented in [docs/observability.md](docs/observability.md).
+The replicated state machine is a simple in-memory key-value store.
 
-## Optimizations
-
-The write path (consensus, log replication, and disk persistence) was profiled, optimized, and re-benchmarked after every change. An optimization was kept only if it produced a measurable, repeatable improvement; changes that didn't move the numbers were reverted.
-
-On a 3-node cluster at 64 concurrent clients, the optimization work took write throughput from 2,444 to 19,463 ops/s (8×) and write p99 latency from 60.19 ms to 6.09 ms (9.9×). Read throughput was unaffected (~72,000 ops/s): reads are served directly from the leader's state machine and never enter the Raft log.
-
-Full methodology, including the smaller tweaks and the changes that were tried and reverted, is in [OPTIMIZATIONS.md](OPTIMIZATIONS.md).
-
-To reproduce the benchmarks:
-
-```bash
-go run ./benchmarks --quick --concurrency=1,16,64
-```
+Implementation guide: [docs/guide.md](docs/guide.md)
 
 ## Benchmarks
 
-Results from a 3-node cluster on a single host ([full report](benchmarks/REPORT.md)); measured on a Cursor Cloud VM (4 vCPUs, 16 GB RAM, Go 1.24.0) with all nodes on loopback.
+Results from a 3-node cluster on a single host ([full report](benchmarks/REPORT.md)); measured on a Cursor Cloud VM (4 vCPUs, 16 GB RAM, Go 1.24.0) with all nodes communicating over loopback.
 
 | Metric                          | Result          |
 | ------------------------------- | --------------- |
@@ -40,11 +29,29 @@ Results from a 3-node cluster on a single host ([full report](benchmarks/REPORT.
 | Write latency, p99 (16 clients) | 4.0 ms          |
 | Leader failover recovery        | 327 ms          |
 
-## Raft implementation
+These numbers measure implementation overhead on a single machine rather than network performance across multiple hosts.
 
-An implementation of the Raft consensus algorithm from the original paper, with a simple in-memory key-value store built on top of the replicated log. Includes leader election, log replication, persistence, and log compaction via state-machine snapshots (with an `InstallSnapshot` RPC to catch up far-behind followers).
+The write path (consensus, log replication, and disk persistence) was profiled, optimized, and benchmarked before and after every change. Optimizations that did not produce repeatable improvements were reverted.
 
-Implementation guide: [docs/guide.md](docs/guide.md)
+Full methodology, including benchmark configuration, optimization results, and reverted experiments, is documented in [OPTIMIZATIONS.md](OPTIMIZATIONS.md).
+
+To reproduce the benchmarks:
+
+```bash
+go run ./benchmarks --quick --concurrency=1,16,64
+```
+
+## Observability
+
+<img width="800" height="404" alt="quorum_demo" src="https://github.com/user-attachments/assets/4eb1e2e3-e883-48a3-996a-cb1ad600c111" />
+
+Prerequisite: [Docker Desktop](https://www.docker.com/products/docker-desktop/) must be running (used to start Prometheus).
+
+```bash
+go run ./playground
+```
+
+Metrics are documented in [docs/observability.md](docs/observability.md).
 
 ## Tests
 
@@ -56,7 +63,7 @@ go test ./playground/...
 
 ## Running a cluster manually
 
-Each node requires an HTTP port (`--port`) and a gRPC endpoint specified in `--peers` using the format `id=host:port`. At least three nodes are required.
+Each node exposes an HTTP API on `--port`. Raft RPC addresses are configured through `--peers` using the format `id=host:port`. At least three nodes are required.
 
 ```bash
 go build -o quorum .
@@ -70,7 +77,7 @@ go build -o quorum .
 
 Each node exposes Prometheus metrics at `/metrics`. Disable metrics with `--metrics=false`.
 
-## Not yet implemented
+## Limitations
 
 - Dynamic cluster membership
-- Segmented log files (compaction rewrites a single log file)
+- Segmented log files (compaction currently rewrites a single log file)
